@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Provider {{ provider.npi }} - CMS DME Analysis</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: #f5f7fa;
+            color: #333;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        header {
+            background: linear-gradient(135deg, #1a365d 0%, #2c5282 100%);
+            color: white;
+            padding: 20px 0;
+            margin-bottom: 30px;
+        }
+        header h1 {
+            font-size: 1.8rem;
+            font-weight: 600;
+        }
+        .back-link {
+            color: rgba(255,255,255,0.8);
+            text-decoration: none;
+            font-size: 0.9rem;
+        }
+        .back-link:hover {
+            color: white;
+        }
+        .card {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+        .card-header {
+            background: #f7fafc;
+            padding: 15px 20px;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .card-header h2 {
+            font-size: 1.1rem;
+            color: #333;
+        }
+        .card-body {
+            padding: 20px;
+        }
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+        }
+        .info-item {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        .info-label {
+            font-size: 0.8rem;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .info-value {
+            font-size: 1rem;
+            color: #333;
+            font-weight: 500;
+        }
+        .badge {
+            display: inline-block;
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+        .badge-adult { background: #c6f6d5; color: #22543d; }
+        .badge-pediatric { background: #feebc8; color: #744210; }
+        .badge-both { background: #e9d8fd; color: #553c9a; }
+        .badge-unknown { background: #e2e8f0; color: #4a5568; }
+        .badge-pending { background: #bee3f8; color: #2a4365; }
+        .badge-completed { background: #c6f6d5; color: #22543d; }
+        .badge-failed { background: #fed7d7; color: #742a2a; }
+
+        .clinic-card {
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+        .clinic-card:last-child {
+            margin-bottom: 0;
+        }
+        .clinic-primary {
+            border-color: #4299e1;
+            background: #ebf8ff;
+        }
+        .clinic-name {
+            font-weight: 600;
+            font-size: 1.1rem;
+            color: #333;
+            margin-bottom: 8px;
+        }
+        .clinic-address {
+            color: #555;
+        }
+        .clinic-meta {
+            margin-top: 10px;
+            font-size: 0.85rem;
+            color: #666;
+        }
+        .clinic-meta a {
+            color: #4299e1;
+        }
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+        }
+        .stat-item {
+            text-align: center;
+            padding: 15px;
+            background: #f7fafc;
+            border-radius: 8px;
+        }
+        .stat-value {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: #2c5282;
+        }
+        .stat-label {
+            font-size: 0.8rem;
+            color: #666;
+            text-transform: uppercase;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <a href="/" class="back-link">&larr; Back to Dashboard</a>
+            <h1>Provider Details</h1>
+        </div>
+    </header>
+
+    <div class="container">
+        <!-- Provider Info -->
+        <div class="card">
+            <div class="card-header">
+                <h2>Provider Information</h2>
+            </div>
+            <div class="card-body">
+                <div class="info-grid">
+                    <div class="info-item">
+                        <span class="info-label">NPI</span>
+                        <span class="info-value">{{ provider.npi }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Name</span>
+                        <span class="info-value">
+                            {{ provider.first_name or '' }} {{ provider.last_name or '' }}{% if provider.credentials %}, {{ provider.credentials }}{% endif %}
+                        </span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Patient Focus</span>
+                        <span class="info-value">
+                            {% set focus = provider.patient_focus or 'Pending' %}
+                            <span class="badge badge-{{ focus.lower() }}">{{ focus }}</span>
+                        </span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Enrichment Status</span>
+                        <span class="info-value">
+                            {% set status = provider.search_status or 'pending' %}
+                            <span class="badge badge-{{ status }}">{{ status | capitalize }}</span>
+                        </span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Specialty</span>
+                        <span class="info-value">{{ provider.specialty_desc or 'N/A' }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">CMS Address</span>
+                        <span class="info-value">
+                            {{ provider.cms_street1 or '' }}<br>
+                            {{ provider.cms_city or '' }}, {{ provider.cms_state or '' }} {{ provider.cms_zip or '' }}
+                        </span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">RUCA Classification</span>
+                        <span class="info-value">{{ provider.ruca_category or 'N/A' }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Entity Code</span>
+                        <span class="info-value">{{ provider.entity_code or 'N/A' }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Billing Statistics -->
+        <div class="card">
+            <div class="card-header">
+                <h2>Billing Statistics</h2>
+            </div>
+            <div class="card-body">
+                <div class="stats-row">
+                    <div class="stat-item">
+                        <div class="stat-value">{{ provider.total_claims or 0 }}</div>
+                        <div class="stat-label">Total Claims</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value">{{ provider.total_services or 0 }}</div>
+                        <div class="stat-label">Total Services</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value">{{ provider.total_suppliers or 0 }}</div>
+                        <div class="stat-label">Suppliers</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value">${{ "%.2f" | format(provider.avg_medicare_payment or 0) }}</div>
+                        <div class="stat-label">Avg Medicare Payment</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value">${{ "%.2f" | format(provider.avg_submitted_charge or 0) }}</div>
+                        <div class="stat-label">Avg Submitted Charge</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Clinic Locations -->
+        <div class="card">
+            <div class="card-header">
+                <h2>Clinic Locations ({{ clinics | length }})</h2>
+            </div>
+            <div class="card-body">
+                {% if clinics %}
+                    {% for clinic in clinics %}
+                    <div class="clinic-card {% if clinic.is_primary %}clinic-primary{% endif %}">
+                        {% if clinic.clinic_name %}
+                        <div class="clinic-name">{{ clinic.clinic_name }}</div>
+                        {% endif %}
+                        <div class="clinic-address">
+                            {{ clinic.street_address or '' }}<br>
+                            {{ clinic.city or '' }}, {{ clinic.state or '' }} {{ clinic.zip or '' }}
+                            {% if clinic.phone %}<br>Phone: {{ clinic.phone }}{% endif %}
+                        </div>
+                        <div class="clinic-meta">
+                            Source: {{ clinic.source_name or 'Unknown' }}
+                            {% if clinic.source_url %}
+                            | <a href="{{ clinic.source_url }}" target="_blank">View Source</a>
+                            {% endif %}
+                            {% if clinic.is_primary %}
+                            | <strong>Primary Location</strong>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <p style="color: #666;">No clinic locations found. Provider may be pending enrichment.</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- HCPCS Information -->
+        <div class="card">
+            <div class="card-header">
+                <h2>HCPCS Information</h2>
+            </div>
+            <div class="card-body">
+                <div class="info-grid">
+                    <div class="info-item">
+                        <span class="info-label">HCPCS Code</span>
+                        <span class="info-value">{{ provider.hcpcs_code or 'N/A' }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Description</span>
+                        <span class="info-value">{{ provider.hcpcs_desc or 'N/A' }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">RBCS Category</span>
+                        <span class="info-value">{{ provider.rbcs_desc or 'N/A' }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Rental Indicator</span>
+                        <span class="info-value">{{ 'Yes' if provider.supplier_rental_ind == 'Y' else 'No' }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- External Links -->
+        <div class="card">
+            <div class="card-header">
+                <h2>External Resources</h2>
+            </div>
+            <div class="card-body">
+                <p style="margin-bottom: 15px;">View this provider on external platforms:</p>
+                <a href="https://npiregistry.cms.hhs.gov/provider-view/{{ provider.npi }}" target="_blank" class="badge badge-completed" style="margin-right: 10px; text-decoration: none;">
+                    NPI Registry
+                </a>
+                <a href="https://www.healthgrades.com/physician/dr-{{ (provider.first_name or '').lower() }}-{{ (provider.last_name or '').lower() }}" target="_blank" class="badge badge-pending" style="margin-right: 10px; text-decoration: none;">
+                    Healthgrades
+                </a>
+                <a href="https://www.doximity.com/pub/{{ provider.npi }}" target="_blank" class="badge badge-adult" style="text-decoration: none;">
+                    Doximity
+                </a>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
