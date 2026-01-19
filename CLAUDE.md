@@ -5,7 +5,7 @@ Analysis tool for CMS Medicare DME data (HCPCS code E0483 - High Frequency Chest
 ## Technology Stack
 
 - **Database**: PostgreSQL (via Postgres.app on macOS)
-- **Backend**: Python 3.9+, Flask
+- **Backend**: Python 3.9+, Flask, openpyxl (Excel export)
 - **Data Source**: CMS Data API (data.cms.gov)
 - **Enrichment**: NPI Registry API, OpenStreetMap (Nominatim + Overpass)
 
@@ -93,6 +93,7 @@ python3 enrich_clinic_names.py > clinic_names_log.txt 2>&1 &
 | `GET /api/states` | List of available states |
 | `GET /api/years` | List of available data years |
 | `GET /api/aggregates?year=` | Aggregate stats filtered by year |
+| `GET /api/export` | Export providers to Excel (.xlsx) with current filters |
 | `GET /provider/<npi>` | Provider detail page |
 
 ## Database Connection
@@ -136,6 +137,22 @@ python3 enrich_clinic_names.py --stats
 # Check clinic name coverage
 psql -d cms_analysis -c "SELECT COUNT(*) FILTER (WHERE clinic_name IS NOT NULL) as with_name, COUNT(*) as total FROM clinics;"
 ```
+
+## Dashboard Features
+
+- **Year Filter**: Prominent filter at top to view data by year or all years combined
+- **Aggregate Cards**: Total Providers, Clinics, Claims, Beneficiaries, Avg Claims/Provider
+- **Provider Table**: Sortable columns (NPI, Name, Specialty, Patient Focus, Claims, Beneficiaries, Location)
+- **Search Filters**: NPI, Provider Name, State, Patient Focus
+- **Excel Export**: Download filtered data as .xlsx file (includes clinic info)
+- **Charts**: Patient Focus distribution, Top States by Claims, Top Specialties
+
+## Data Fields
+
+Key fields from CMS data (`provider_yearly_data` table):
+- `total_claims` - From CMS field `Tot_Suplr_Clms` (total supplier claims)
+- `total_beneficiaries` - From CMS field `Tot_Suplr_Benes` (total beneficiaries served)
+- `total_services` - From CMS field `Tot_Suplr_Srvcs` (total services provided)
 
 ## Notes
 
