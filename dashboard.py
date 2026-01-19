@@ -4,9 +4,11 @@ CMS DME Analysis Dashboard
 Web-based interface for browsing and analyzing provider data
 """
 
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, Response
 import psycopg2
 from psycopg2.extras import RealDictCursor
+from openpyxl import Workbook
+from io import BytesIO
 
 app = Flask(__name__)
 
@@ -89,6 +91,10 @@ def dashboard():
     cur.execute("SELECT SUM(total_claims) as total FROM provider_yearly_data")
     aggregates['total_claims'] = cur.fetchone()['total'] or 0
 
+    # Total beneficiaries sum (from yearly data)
+    cur.execute("SELECT SUM(total_beneficiaries) as total FROM provider_yearly_data")
+    aggregates['total_beneficiaries'] = cur.fetchone()['total'] or 0
+
     # Average claims per provider
     cur.execute("SELECT AVG(total_claims) as avg FROM provider_yearly_data WHERE total_claims IS NOT NULL")
     avg_claims = cur.fetchone()['avg']
@@ -132,6 +138,11 @@ def get_aggregates():
         aggregates['total_claims'] = cur.fetchone()['total'] or 0
 
         cur.execute("""
+            SELECT SUM(total_beneficiaries) as total FROM provider_yearly_data WHERE data_year = %s
+        """, [year])
+        aggregates['total_beneficiaries'] = cur.fetchone()['total'] or 0
+
+        cur.execute("""
             SELECT AVG(total_claims) as avg FROM provider_yearly_data
             WHERE data_year = %s AND total_claims IS NOT NULL
         """, [year])
@@ -157,6 +168,9 @@ def get_aggregates():
 
         cur.execute("SELECT SUM(total_claims) as total FROM provider_yearly_data")
         aggregates['total_claims'] = cur.fetchone()['total'] or 0
+
+        cur.execute("SELECT SUM(total_beneficiaries) as total FROM provider_yearly_data")
+        aggregates['total_beneficiaries'] = cur.fetchone()['total'] or 0
 
         cur.execute("SELECT AVG(total_claims) as avg FROM provider_yearly_data WHERE total_claims IS NOT NULL")
         avg_claims = cur.fetchone()['avg']
@@ -279,6 +293,7 @@ def get_providers():
                 p.specialty_desc,
                 y.total_claims,
                 y.total_services,
+                y.total_beneficiaries,
                 y.data_year,
                 COALESCE(e.patient_focus, 'Pending') as patient_focus,
                 e.search_status
@@ -314,6 +329,7 @@ def get_providers():
                 p.specialty_desc,
                 COALESCE(SUM(y.total_claims), 0) as total_claims,
                 COALESCE(SUM(y.total_services), 0) as total_services,
+                COALESCE(SUM(y.total_beneficiaries), 0) as total_beneficiaries,
                 NULL as data_year,
                 COALESCE(e.patient_focus, 'Pending') as patient_focus,
                 e.search_status
@@ -343,7 +359,7 @@ def get_providers():
 
         # Get yearly data for each provider
         cur.execute("""
-            SELECT data_year, total_claims, total_services
+            SELECT data_year, total_claims, total_services, total_beneficiaries
             FROM provider_yearly_data
             WHERE npi = %s
             ORDER BY data_year DESC
@@ -411,6 +427,167 @@ def provider_detail(npi):
     conn.close()
 
     return render_template('provider_detail.html', provider=dict(provider), clinics=clinics, yearly_data=yearly_data)
+
+@app.route('/api/export')
+def export_providers():
+    """Export provider data to Excel."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    # Get filter parameters (same as /api/providers)
+    npi = request.args.get('npi', '').strip()
+    name = request.args.get('name', '').strip()
+    state = request.args.get('state', '').strip()
+    patient_focus = request.args.get('patient_focus', '').strip()
+    year = request.args.get('year', '').strip()
+
+    # Build query
+    where_clauses = []
+    params = []
+
+    if npi:
+        where_clauses.append("p.npi LIKE %s")
+        params.append(f"%{npi}%")
+    if name:
+        where_clauses.append("(p.first_name ILIKE %s OR p.last_name ILIKE %s)")
+        params.extend([f"%{name}%", f"%{name}%"])
+    if state:
+        where_clauses.append("p.cms_state = %s")
+        params.append(state.upper())
+    if patient_focus and patient_focus != 'all':
+        where_clauses.append("e.patient_focus = %s")
+        params.append(patient_focus)
+
+    where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
+
+    if year and year != 'all':
+        where_clauses_year = where_clauses.copy()
+        where_clauses_year.append("y.data_year = %s")
+        params_year = params + [int(year)]
+        where_sql_year = " AND ".join(where_clauses_year) if where_clauses_year else "1=1"
+
+        data_sql = f"""
+            SELECT
+                p.npi, p.first_name, p.last_name, p.credentials,
+                p.cms_city, p.cms_state, p.specialty_desc,
+                y.total_claims, y.total_services, y.total_beneficiaries, y.data_year,
+                COALESCE(e.patient_focus, 'Pending') as patient_focus
+            FROM providers p
+            JOIN provider_yearly_data y ON p.npi = y.npi
+            LEFT JOIN provider_enrichment e ON p.npi = e.npi
+            WHERE {where_sql_year}
+            ORDER BY y.total_claims DESC NULLS LAST
+            LIMIT 10000
+        """
+        cur.execute(data_sql, params_year)
+    else:
+        data_sql = f"""
+            SELECT
+                p.npi, p.first_name, p.last_name, p.credentials,
+                p.cms_city, p.cms_state, p.specialty_desc,
+                COALESCE(SUM(y.total_claims), 0) as total_claims,
+                COALESCE(SUM(y.total_services), 0) as total_services,
+                COALESCE(SUM(y.total_beneficiaries), 0) as total_beneficiaries,
+                NULL as data_year,
+                COALESCE(e.patient_focus, 'Pending') as patient_focus
+            FROM providers p
+            LEFT JOIN provider_yearly_data y ON p.npi = y.npi
+            LEFT JOIN provider_enrichment e ON p.npi = e.npi
+            WHERE {where_sql}
+            GROUP BY p.npi, p.first_name, p.last_name, p.credentials,
+                     p.cms_city, p.cms_state, p.specialty_desc, e.patient_focus
+            ORDER BY total_claims DESC NULLS LAST
+            LIMIT 10000
+        """
+        cur.execute(data_sql, params)
+
+    providers = cur.fetchall()
+
+    # Get clinics for each provider
+    provider_clinics = {}
+    if providers:
+        npis = [p['npi'] for p in providers]
+        cur.execute("""
+            SELECT npi, clinic_name, street_address, city, state, zip
+            FROM clinics
+            WHERE npi = ANY(%s)
+            ORDER BY npi, is_primary DESC
+        """, [npis])
+        for row in cur.fetchall():
+            if row['npi'] not in provider_clinics:
+                provider_clinics[row['npi']] = []
+            provider_clinics[row['npi']].append(dict(row))
+
+    cur.close()
+    conn.close()
+
+    # Create Excel workbook
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Providers"
+
+    # Headers
+    headers = ['NPI', 'First Name', 'Last Name', 'Credentials', 'Specialty',
+               'Patient Focus', 'Total Claims', 'Beneficiaries', 'City', 'State', 'Year',
+               'Clinic Name', 'Clinic Address', 'Clinic City', 'Clinic State', 'Clinic Zip']
+    ws.append(headers)
+
+    # Style headers
+    for col in range(1, len(headers) + 1):
+        ws.cell(row=1, column=col).font = ws.cell(row=1, column=col).font.copy(bold=True)
+
+    # Data rows
+    for p in providers:
+        clinics = provider_clinics.get(p['npi'], [])
+        if clinics:
+            for i, clinic in enumerate(clinics):
+                row = [
+                    p['npi'] if i == 0 else '',
+                    p['first_name'] if i == 0 else '',
+                    p['last_name'] if i == 0 else '',
+                    p['credentials'] if i == 0 else '',
+                    p['specialty_desc'] if i == 0 else '',
+                    p['patient_focus'] if i == 0 else '',
+                    p['total_claims'] if i == 0 else '',
+                    p['total_beneficiaries'] if i == 0 else '',
+                    p['cms_city'] if i == 0 else '',
+                    p['cms_state'] if i == 0 else '',
+                    p['data_year'] if i == 0 else '',
+                    clinic.get('clinic_name', ''),
+                    clinic.get('street_address', ''),
+                    clinic.get('city', ''),
+                    clinic.get('state', ''),
+                    clinic.get('zip', '')
+                ]
+                ws.append(row)
+        else:
+            row = [
+                p['npi'], p['first_name'], p['last_name'], p['credentials'],
+                p['specialty_desc'], p['patient_focus'], p['total_claims'],
+                p['total_beneficiaries'], p['cms_city'], p['cms_state'], p['data_year'],
+                '', '', '', '', ''
+            ]
+            ws.append(row)
+
+    # Adjust column widths
+    for col in ws.columns:
+        max_length = max(len(str(cell.value or '')) for cell in col)
+        ws.column_dimensions[col[0].column_letter].width = min(max_length + 2, 50)
+
+    # Save to BytesIO
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    # Return as download
+    year_str = year if year and year != 'all' else 'all_years'
+    filename = f"cms_providers_{year_str}.xlsx"
+
+    return Response(
+        output.getvalue(),
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        headers={'Content-Disposition': f'attachment; filename={filename}'}
+    )
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5001)

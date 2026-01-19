@@ -22,7 +22,7 @@ MyClaude/
 ├── load_data.py              # Initial data loader for 2023 data
 ├── download_all_years.py     # Multi-year data downloader (2014-2022)
 ├── enrich_npi.py             # NPI enrichment tool (clinic info, patient focus)
-├── enrich_clinic_names.py    # Clinic name lookup via Google Places API
+├── enrich_clinic_names.py    # Clinic/facility name lookup via OpenStreetMap
 └── cms_e0483_*.json          # Downloaded JSON data files by year
 ```
 
@@ -40,7 +40,7 @@ MyClaude/
 |--------|---------|
 | `dashboard.py` | Flask web server with search, filtering, aggregates |
 | `enrich_npi.py` | Queries NPI Registry for clinic addresses and patient focus |
-| `enrich_clinic_names.py` | Looks up facility names via Google Places API |
+| `enrich_clinic_names.py` | Looks up facility names via OpenStreetMap (free) |
 | `download_all_years.py` | Downloads E0483 data for years 2014-2022 from CMS API |
 | `load_data.py` | Loads JSON data into PostgreSQL |
 
@@ -119,6 +119,22 @@ DB_CONFIG = {
 
 # Kill process on port 5001
 lsof -ti:5001 | xargs kill -9
+```
+
+## Clinic Name Enrichment
+
+The `enrich_clinic_names.py` script finds facility/clinic names for addresses using free APIs:
+
+1. **Nominatim** - Geocodes address to lat/lon coordinates
+2. **Overpass API** - Searches for healthcare facilities (hospitals, clinics, doctors) near coordinates
+3. **Fallback** - Uses provider name (e.g., "John Smith, MD - Pulmonology") if no facility found
+
+```bash
+# Check progress
+python3 enrich_clinic_names.py --stats
+
+# Check clinic name coverage
+psql -d cms_analysis -c "SELECT COUNT(*) FILTER (WHERE clinic_name IS NOT NULL) as with_name, COUNT(*) as total FROM clinics;"
 ```
 
 ## Notes

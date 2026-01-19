@@ -133,7 +133,7 @@ class NPIEnricher:
 
         # Check taxonomies for pediatric indicators
         taxonomies = npi_data.get('taxonomies', [])
-        taxonomy_descs = [t.get('desc', '').lower() for t in taxonomies]
+        taxonomy_descs = [(t.get('desc') or '').lower() for t in taxonomies]
         all_taxonomy_text = ' '.join(taxonomy_descs)
 
         # Also include the specialty from CMS data
