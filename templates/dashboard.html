@@ -382,14 +382,21 @@
     <header>
         <div class="container">
             <h1>CMS DME Analysis Dashboard</h1>
-            <p>HCPCS Code E0483 - High Frequency Chest Wall Oscillation System</p>
+            <p id="hcpcsDescription">HCPCS Code E0483 - High Frequency Chest Wall Oscillation System</p>
         </div>
     </header>
 
     <div class="container">
-        <!-- Prominent Year Filter -->
+        <!-- Prominent Filter Bar -->
         <div class="year-filter-bar">
-            <label for="yearFilterTop">Viewing Data For:</label>
+            <label for="hcpcsFilterTop">HCPCS Code:</label>
+            <select id="hcpcsFilterTop" onchange="onHcpcsFilterChange(this.value)">
+                <option value="all">All Codes</option>
+                {% for code in available_hcpcs %}
+                <option value="{{ code }}">{{ code }}</option>
+                {% endfor %}
+            </select>
+            <label for="yearFilterTop">Year:</label>
             <select id="yearFilterTop" onchange="onYearFilterChange(this.value)">
                 <option value="all">All Years</option>
             </select>
@@ -543,6 +550,7 @@
         let perPage = 50;
         let currentSort = { column: 'total_claims', direction: 'desc' };
         let currentData = [];
+        let hcpcsDescriptions = {{ hcpcs_descriptions | tojson | safe }};
 
         // Load states for dropdown
         async function loadStates() {
@@ -570,13 +578,43 @@
             });
         }
 
+        // Load HCPCS codes for dropdown
+        async function loadHcpcsCodes() {
+            const response = await fetch('/api/hcpcs_codes');
+            const codes = await response.json();
+            const select = document.getElementById('hcpcsFilterTop');
+            // Update descriptions from server
+            codes.forEach(item => {
+                hcpcsDescriptions[item.code] = item.description;
+            });
+        }
+
+        // Handle HCPCS filter change
+        async function onHcpcsFilterChange(hcpcsCode) {
+            // Update header description
+            const hcpcsDesc = document.getElementById('hcpcsDescription');
+            if (hcpcsCode === 'all') {
+                hcpcsDesc.textContent = 'All HCPCS Codes';
+            } else {
+                const description = hcpcsDescriptions[hcpcsCode] || 'Unknown';
+                hcpcsDesc.textContent = `HCPCS Code ${hcpcsCode} - ${description}`;
+            }
+            // Reload aggregates and providers
+            const year = document.getElementById('yearFilterTop').value;
+            const response = await fetch(`/api/aggregates?year=${year}&hcpcs_code=${hcpcsCode}`);
+            const aggregates = await response.json();
+            updateAggregates(aggregates);
+            searchProviders(1);
+        }
+
         // Handle year filter change from top bar
         async function onYearFilterChange(year) {
             // Update displays
             const yearText = year === 'all' ? 'All Years' : year;
             document.getElementById('yearBadge').textContent = yearText;
             document.getElementById('selectedYearDisplay').textContent = yearText;
-            const response = await fetch(`/api/aggregates?year=${year}`);
+            const hcpcsCode = document.getElementById('hcpcsFilterTop').value;
+            const response = await fetch(`/api/aggregates?year=${year}&hcpcs_code=${hcpcsCode}`);
             const aggregates = await response.json();
             updateAggregates(aggregates);
             searchProviders(1);
@@ -663,11 +701,13 @@
             const state = document.getElementById('state').value;
             const patientFocus = document.getElementById('patient_focus').value;
             const year = document.getElementById('yearFilterTop').value;
+            const hcpcsCode = document.getElementById('hcpcsFilterTop').value;
 
             const params = new URLSearchParams({
                 npi, name, state,
                 patient_focus: patientFocus,
                 year: year,
+                hcpcs_code: hcpcsCode,
                 page: currentPage,
                 per_page: perPage
             });
@@ -798,6 +838,8 @@
             document.getElementById('state').value = '';
             document.getElementById('patient_focus').value = 'all';
             document.getElementById('yearFilterTop').value = 'all';
+            document.getElementById('hcpcsFilterTop').value = 'all';
+            document.getElementById('hcpcsDescription').textContent = 'All HCPCS Codes';
             onYearFilterChange('all');
         }
 
@@ -808,11 +850,13 @@
             const state = document.getElementById('state').value;
             const patientFocus = document.getElementById('patient_focus').value;
             const year = document.getElementById('yearFilterTop').value;
+            const hcpcsCode = document.getElementById('hcpcsFilterTop').value;
 
             const params = new URLSearchParams({
                 npi, name, state,
                 patient_focus: patientFocus,
-                year: year
+                year: year,
+                hcpcs_code: hcpcsCode
             });
 
             window.location.href = `/api/export?${params}`;
@@ -821,6 +865,7 @@
         // Initialize
         loadStates();
         loadYears();
+        loadHcpcsCodes();
         searchProviders(1);
     </script>
 </body>

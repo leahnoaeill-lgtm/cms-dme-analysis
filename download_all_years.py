@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Download CMS DME data for HCPCS code E0483 for all years (2014-2022)
-Year 2023 already downloaded.
+Download CMS DME data for HCPCS codes (E0483, E0482) for all years (2014-2023)
+Supports --hcpcs argument to specify which code to download.
 """
 
 import requests
@@ -10,6 +10,7 @@ import time
 import psycopg2
 from psycopg2.extras import execute_values
 from datetime import datetime
+import argparse
 
 # Dataset UUIDs for each year
 DATASET_VERSIONS = {
@@ -22,11 +23,16 @@ DATASET_VERSIONS = {
     2020: "323df359-ceac-4525-a350-e2cd9eb128fe",
     2021: "46ae675c-bc81-40ca-aa79-64da1c1ec9d9",
     2022: "0dd53b4b-67ba-48c7-b8fa-fecbdfc83b70",
-    # 2023 already downloaded: "86b4807a-d63a-44be-bfdf-ffd398d5e623"
+    2023: "86b4807a-d63a-44be-bfdf-ffd398d5e623",
+}
+
+# HCPCS code descriptions
+HCPCS_CODES = {
+    "E0483": "High Frequency Chest Wall Oscillation System",
+    "E0482": "Cough Stimulating Device",
 }
 
 API_BASE = "https://data.cms.gov/data-api/v1/dataset"
-HCPCS_CODE = "E0483"
 PAGE_SIZE = 25
 
 DB_CONFIG = {
@@ -52,10 +58,10 @@ def safe_float(value):
     except (ValueError, TypeError):
         return None
 
-def download_year_data(year, uuid):
-    """Download all E0483 records for a specific year."""
+def download_year_data(year, uuid, hcpcs_code):
+    """Download all records for a specific HCPCS code and year."""
     print(f"\n{'='*60}")
-    print(f"Downloading data for year {year}")
+    print(f"Downloading data for HCPCS {hcpcs_code}, year {year}")
     print(f"Dataset UUID: {uuid}")
     print(f"{'='*60}")
 
@@ -72,7 +78,7 @@ def download_year_data(year, uuid):
 
     while offset < max_records:
         params = {
-            "filter[HCPCS_CD]": HCPCS_CODE,
+            "filter[HCPCS_CD]": hcpcs_code,
             "size": PAGE_SIZE,
             "offset": offset
         }
@@ -112,7 +118,7 @@ def download_year_data(year, uuid):
     print(f"  Total records for {year}: {len(all_records)}")
     return all_records
 
-def load_records_to_db(records, year):
+def load_records_to_db(records, year, hcpcs_code):
     """Load records into the database."""
     if not records:
         return 0, 0
@@ -196,18 +202,19 @@ def load_records_to_db(records, year):
         if result and result[0]:
             new_providers += 1
 
-        # Insert yearly billing data
+        # Insert yearly billing data with HCPCS code
         cur.execute("""
             INSERT INTO provider_yearly_data (
-                npi, data_year,
+                npi, data_year, hcpcs_code,
                 total_suppliers, total_claims, total_services, total_beneficiaries,
                 avg_submitted_charge, avg_medicare_allowed, avg_medicare_payment, avg_medicare_standardized,
                 supplier_rental_ind
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (npi, data_year) DO NOTHING
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (npi, data_year, hcpcs_code) DO NOTHING
         """, (
             npi,
             year,
+            hcpcs_code,
             safe_int(record.get('Tot_Suplrs')),
             safe_int(record.get('Tot_Suplr_Clms')),
             safe_int(record.get('Tot_Suplr_Srvcs')),
@@ -238,27 +245,42 @@ def load_records_to_db(records, year):
     return new_providers, yearly_records
 
 def main():
+    parser = argparse.ArgumentParser(description='Download CMS DME data for specified HCPCS codes')
+    parser.add_argument('--hcpcs', type=str, default='E0483', choices=list(HCPCS_CODES.keys()),
+                        help='HCPCS code to download (default: E0483)')
+    parser.add_argument('--year', type=int, help='Download only a specific year (optional)')
+    args = parser.parse_args()
+
+    hcpcs_code = args.hcpcs
+    hcpcs_desc = HCPCS_CODES.get(hcpcs_code, "Unknown")
+
     print("="*60)
-    print("CMS DME DATA DOWNLOAD - ALL YEARS")
-    print(f"HCPCS Code: {HCPCS_CODE}")
-    print(f"Years: 2014-2022 (2023 already loaded)")
+    print("CMS DME DATA DOWNLOAD")
+    print(f"HCPCS Code: {hcpcs_code} - {hcpcs_desc}")
+    print(f"Years: {min(DATASET_VERSIONS.keys())}-{max(DATASET_VERSIONS.keys())}")
     print("="*60)
 
     total_records = 0
     total_new_providers = 0
     total_yearly = 0
 
-    for year in sorted(DATASET_VERSIONS.keys()):
+    years_to_download = [args.year] if args.year else sorted(DATASET_VERSIONS.keys())
+
+    for year in years_to_download:
+        if year not in DATASET_VERSIONS:
+            print(f"Year {year} not available. Skipping.")
+            continue
+
         uuid = DATASET_VERSIONS[year]
-        records = download_year_data(year, uuid)
+        records = download_year_data(year, uuid, hcpcs_code)
 
         if records:
             # Save to JSON file
-            filename = f"cms_e0483_{year}.json"
+            filename = f"cms_{hcpcs_code.lower()}_{year}.json"
             with open(filename, 'w') as f:
                 json.dump({
                     "year": year,
-                    "hcpcs_code": HCPCS_CODE,
+                    "hcpcs_code": hcpcs_code,
                     "total_records": len(records),
                     "download_date": datetime.now().isoformat(),
                     "data": records
@@ -266,7 +288,7 @@ def main():
             print(f"  Saved to {filename}")
 
             # Load to database
-            new_providers, yearly_records = load_records_to_db(records, year)
+            new_providers, yearly_records = load_records_to_db(records, year, hcpcs_code)
             print(f"  New providers: {new_providers}, Yearly records: {yearly_records}")
 
             total_records += len(records)
@@ -289,10 +311,10 @@ def main():
     cur.execute("SELECT COUNT(DISTINCT npi) FROM providers")
     print(f"\nUnique providers in database: {cur.fetchone()[0]}")
 
-    cur.execute("SELECT data_year, COUNT(*) FROM provider_yearly_data GROUP BY data_year ORDER BY data_year")
-    print("\nRecords by year:")
+    cur.execute("SELECT hcpcs_code, data_year, COUNT(*) FROM provider_yearly_data GROUP BY hcpcs_code, data_year ORDER BY hcpcs_code, data_year")
+    print("\nRecords by HCPCS code and year:")
     for row in cur.fetchall():
-        print(f"  {row[0]}: {row[1]}")
+        print(f"  {row[0]} - {row[1]}: {row[2]}")
 
     cur.close()
     conn.close()

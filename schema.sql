@@ -100,12 +100,44 @@ CREATE TABLE IF NOT EXISTS clinics (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Provider yearly data table (per year/HCPCS code billing data)
+CREATE TABLE IF NOT EXISTS provider_yearly_data (
+    id SERIAL PRIMARY KEY,
+    npi VARCHAR(10) NOT NULL REFERENCES providers(npi),
+    data_year INTEGER NOT NULL,
+    hcpcs_code VARCHAR(10) NOT NULL,
+
+    -- Billing metrics
+    total_suppliers INTEGER,
+    total_claims INTEGER,
+    total_services INTEGER,
+    total_beneficiaries INTEGER,
+
+    -- Financial averages
+    avg_submitted_charge DECIMAL(12,2),
+    avg_medicare_allowed DECIMAL(12,2),
+    avg_medicare_payment DECIMAL(12,2),
+    avg_medicare_standardized DECIMAL(12,2),
+
+    -- Rental indicator
+    supplier_rental_ind VARCHAR(1),
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    -- Unique constraint on npi + year + hcpcs_code
+    CONSTRAINT provider_yearly_data_npi_year_hcpcs_key UNIQUE (npi, data_year, hcpcs_code)
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_providers_state ON providers(cms_state);
 CREATE INDEX IF NOT EXISTS idx_providers_specialty ON providers(specialty_code);
 CREATE INDEX IF NOT EXISTS idx_clinics_npi ON clinics(npi);
 CREATE INDEX IF NOT EXISTS idx_clinics_state ON clinics(state);
 CREATE INDEX IF NOT EXISTS idx_enrichment_status ON provider_enrichment(search_status);
+CREATE INDEX IF NOT EXISTS idx_yearly_data_npi ON provider_yearly_data(npi);
+CREATE INDEX IF NOT EXISTS idx_yearly_data_year ON provider_yearly_data(data_year);
+CREATE INDEX IF NOT EXISTS idx_yearly_data_hcpcs ON provider_yearly_data(hcpcs_code);
 
 -- View for full provider info with enrichment
 CREATE OR REPLACE VIEW provider_full_view AS

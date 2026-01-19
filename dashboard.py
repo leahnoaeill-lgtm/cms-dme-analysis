@@ -19,6 +19,12 @@ DB_CONFIG = {
     "port": 5432
 }
 
+# HCPCS code descriptions
+HCPCS_CODES = {
+    "E0483": "High Frequency Chest Wall Oscillation System",
+    "E0482": "Cough Stimulating Device",
+}
+
 def get_db_connection():
     """Get a database connection."""
     return psycopg2.connect(**DB_CONFIG, cursor_factory=RealDictCursor)
@@ -36,6 +42,14 @@ def dashboard():
         ORDER BY data_year DESC
     """)
     available_years = [row['data_year'] for row in cur.fetchall()]
+
+    # Get available HCPCS codes from database
+    cur.execute("""
+        SELECT DISTINCT hcpcs_code FROM provider_yearly_data
+        WHERE hcpcs_code IS NOT NULL
+        ORDER BY hcpcs_code
+    """)
+    available_hcpcs = [row['hcpcs_code'] for row in cur.fetchall()]
 
     # Get aggregates (all years combined for initial view)
     aggregates = {}
@@ -112,78 +126,124 @@ def dashboard():
     cur.close()
     conn.close()
 
-    return render_template('dashboard.html', aggregates=aggregates, available_years=available_years)
+    return render_template('dashboard.html', aggregates=aggregates, available_years=available_years,
+                           available_hcpcs=available_hcpcs, hcpcs_descriptions=HCPCS_CODES)
+
+@app.route('/api/hcpcs_codes')
+def get_hcpcs_codes():
+    """Get list of available HCPCS codes with descriptions."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT DISTINCT hcpcs_code
+        FROM provider_yearly_data
+        WHERE hcpcs_code IS NOT NULL
+        ORDER BY hcpcs_code
+    """)
+    codes = [row['hcpcs_code'] for row in cur.fetchall()]
+    cur.close()
+    conn.close()
+    # Return codes with descriptions
+    result = [{"code": code, "description": HCPCS_CODES.get(code, "Unknown")} for code in codes]
+    return jsonify(result)
 
 @app.route('/api/aggregates')
 def get_aggregates():
-    """API endpoint for aggregates with optional year filter."""
+    """API endpoint for aggregates with optional year and HCPCS code filter."""
     conn = get_db_connection()
     cur = conn.cursor()
 
     year = request.args.get('year', '').strip()
+    hcpcs_code = request.args.get('hcpcs_code', '').strip()
 
     aggregates = {}
+
+    # Build WHERE clause for HCPCS filter
+    hcpcs_filter = ""
+    hcpcs_params = []
+    if hcpcs_code and hcpcs_code != 'all':
+        hcpcs_filter = " AND hcpcs_code = %s"
+        hcpcs_params = [hcpcs_code]
 
     if year and year != 'all':
         year = int(year)
         # Year-specific aggregates from yearly data
-        cur.execute("""
-            SELECT COUNT(DISTINCT npi) as count FROM provider_yearly_data WHERE data_year = %s
-        """, [year])
+        cur.execute(f"""
+            SELECT COUNT(DISTINCT npi) as count FROM provider_yearly_data WHERE data_year = %s{hcpcs_filter}
+        """, [year] + hcpcs_params)
         aggregates['total_providers'] = cur.fetchone()['count']
 
-        cur.execute("""
-            SELECT SUM(total_claims) as total FROM provider_yearly_data WHERE data_year = %s
-        """, [year])
+        cur.execute(f"""
+            SELECT SUM(total_claims) as total FROM provider_yearly_data WHERE data_year = %s{hcpcs_filter}
+        """, [year] + hcpcs_params)
         aggregates['total_claims'] = cur.fetchone()['total'] or 0
 
-        cur.execute("""
-            SELECT SUM(total_beneficiaries) as total FROM provider_yearly_data WHERE data_year = %s
-        """, [year])
+        cur.execute(f"""
+            SELECT SUM(total_beneficiaries) as total FROM provider_yearly_data WHERE data_year = %s{hcpcs_filter}
+        """, [year] + hcpcs_params)
         aggregates['total_beneficiaries'] = cur.fetchone()['total'] or 0
 
-        cur.execute("""
+        cur.execute(f"""
             SELECT AVG(total_claims) as avg FROM provider_yearly_data
-            WHERE data_year = %s AND total_claims IS NOT NULL
-        """, [year])
+            WHERE data_year = %s AND total_claims IS NOT NULL{hcpcs_filter}
+        """, [year] + hcpcs_params)
         avg_claims = cur.fetchone()['avg']
         aggregates['avg_claims'] = round(float(avg_claims), 1) if avg_claims else 0
 
         # Top states by claims for selected year
-        cur.execute("""
+        cur.execute(f"""
             SELECT p.cms_state, COALESCE(SUM(y.total_claims), 0) as total_claims
             FROM provider_yearly_data y
             JOIN providers p ON y.npi = p.npi
-            WHERE y.data_year = %s
+            WHERE y.data_year = %s{hcpcs_filter.replace('hcpcs_code', 'y.hcpcs_code')}
             GROUP BY p.cms_state
             ORDER BY total_claims DESC
             LIMIT 10
-        """, [year])
+        """, [year] + hcpcs_params)
         aggregates['top_states'] = [dict(row) for row in cur.fetchall()]
 
     else:
-        # All years combined
-        cur.execute("SELECT COUNT(*) as count FROM providers")
+        # All years combined (with optional HCPCS filter)
+        if hcpcs_code and hcpcs_code != 'all':
+            cur.execute("""
+                SELECT COUNT(DISTINCT npi) as count FROM provider_yearly_data WHERE hcpcs_code = %s
+            """, [hcpcs_code])
+        else:
+            cur.execute("SELECT COUNT(*) as count FROM providers")
         aggregates['total_providers'] = cur.fetchone()['count']
 
-        cur.execute("SELECT SUM(total_claims) as total FROM provider_yearly_data")
+        base_where = "WHERE hcpcs_code = %s" if (hcpcs_code and hcpcs_code != 'all') else ""
+        base_params = [hcpcs_code] if (hcpcs_code and hcpcs_code != 'all') else []
+
+        cur.execute(f"SELECT SUM(total_claims) as total FROM provider_yearly_data {base_where}", base_params)
         aggregates['total_claims'] = cur.fetchone()['total'] or 0
 
-        cur.execute("SELECT SUM(total_beneficiaries) as total FROM provider_yearly_data")
+        cur.execute(f"SELECT SUM(total_beneficiaries) as total FROM provider_yearly_data {base_where}", base_params)
         aggregates['total_beneficiaries'] = cur.fetchone()['total'] or 0
 
-        cur.execute("SELECT AVG(total_claims) as avg FROM provider_yearly_data WHERE total_claims IS NOT NULL")
+        where_claims = f"{base_where} AND total_claims IS NOT NULL" if base_where else "WHERE total_claims IS NOT NULL"
+        cur.execute(f"SELECT AVG(total_claims) as avg FROM provider_yearly_data {where_claims}", base_params)
         avg_claims = cur.fetchone()['avg']
         aggregates['avg_claims'] = round(float(avg_claims), 1) if avg_claims else 0
 
-        cur.execute("""
-            SELECT p.cms_state, COALESCE(SUM(y.total_claims), 0) as total_claims
-            FROM providers p
-            LEFT JOIN provider_yearly_data y ON p.npi = y.npi
-            GROUP BY p.cms_state
-            ORDER BY total_claims DESC
-            LIMIT 10
-        """)
+        if hcpcs_code and hcpcs_code != 'all':
+            cur.execute("""
+                SELECT p.cms_state, COALESCE(SUM(y.total_claims), 0) as total_claims
+                FROM providers p
+                LEFT JOIN provider_yearly_data y ON p.npi = y.npi AND y.hcpcs_code = %s
+                GROUP BY p.cms_state
+                ORDER BY total_claims DESC
+                LIMIT 10
+            """, [hcpcs_code])
+        else:
+            cur.execute("""
+                SELECT p.cms_state, COALESCE(SUM(y.total_claims), 0) as total_claims
+                FROM providers p
+                LEFT JOIN provider_yearly_data y ON p.npi = y.npi
+                GROUP BY p.cms_state
+                ORDER BY total_claims DESC
+                LIMIT 10
+            """)
         aggregates['top_states'] = [dict(row) for row in cur.fetchall()]
 
     # These don't change by year
@@ -238,6 +298,7 @@ def get_providers():
     state = request.args.get('state', '').strip()
     patient_focus = request.args.get('patient_focus', '').strip()
     year = request.args.get('year', '').strip()
+    hcpcs_code = request.args.get('hcpcs_code', '').strip()
     page = int(request.args.get('page', 1))
     per_page = int(request.args.get('per_page', 50))
 
@@ -265,10 +326,16 @@ def get_providers():
         where_clauses.append("y.data_year = %s")
         params.append(int(year))
 
+    if hcpcs_code and hcpcs_code != 'all':
+        where_clauses.append("y.hcpcs_code = %s")
+        params.append(hcpcs_code)
+
     where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
 
-    # Use yearly data if year is specified
-    if year and year != 'all':
+    # Use yearly data if year or hcpcs_code is specified (need to join with yearly data)
+    needs_yearly_join = (year and year != 'all') or (hcpcs_code and hcpcs_code != 'all')
+
+    if needs_yearly_join:
         # Get total count
         count_sql = f"""
             SELECT COUNT(*) as count
@@ -295,6 +362,7 @@ def get_providers():
                 y.total_services,
                 y.total_beneficiaries,
                 y.data_year,
+                y.hcpcs_code,
                 COALESCE(e.patient_focus, 'Pending') as patient_focus,
                 e.search_status
             FROM providers p
@@ -331,6 +399,7 @@ def get_providers():
                 COALESCE(SUM(y.total_services), 0) as total_services,
                 COALESCE(SUM(y.total_beneficiaries), 0) as total_beneficiaries,
                 NULL as data_year,
+                NULL as hcpcs_code,
                 COALESCE(e.patient_focus, 'Pending') as patient_focus,
                 e.search_status
             FROM providers p
@@ -440,6 +509,7 @@ def export_providers():
     state = request.args.get('state', '').strip()
     patient_focus = request.args.get('patient_focus', '').strip()
     year = request.args.get('year', '').strip()
+    hcpcs_code = request.args.get('hcpcs_code', '').strip()
 
     # Build query
     where_clauses = []
@@ -458,29 +528,39 @@ def export_providers():
         where_clauses.append("e.patient_focus = %s")
         params.append(patient_focus)
 
-    where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
+    # Check if we need to filter by year or HCPCS code
+    needs_yearly_filter = (year and year != 'all') or (hcpcs_code and hcpcs_code != 'all')
 
-    if year and year != 'all':
-        where_clauses_year = where_clauses.copy()
-        where_clauses_year.append("y.data_year = %s")
-        params_year = params + [int(year)]
-        where_sql_year = " AND ".join(where_clauses_year) if where_clauses_year else "1=1"
+    if needs_yearly_filter:
+        where_clauses_yearly = where_clauses.copy()
+        params_yearly = params.copy()
+
+        if year and year != 'all':
+            where_clauses_yearly.append("y.data_year = %s")
+            params_yearly.append(int(year))
+        if hcpcs_code and hcpcs_code != 'all':
+            where_clauses_yearly.append("y.hcpcs_code = %s")
+            params_yearly.append(hcpcs_code)
+
+        where_sql_yearly = " AND ".join(where_clauses_yearly) if where_clauses_yearly else "1=1"
 
         data_sql = f"""
             SELECT
                 p.npi, p.first_name, p.last_name, p.credentials,
                 p.cms_city, p.cms_state, p.specialty_desc,
                 y.total_claims, y.total_services, y.total_beneficiaries, y.data_year,
+                y.hcpcs_code,
                 COALESCE(e.patient_focus, 'Pending') as patient_focus
             FROM providers p
             JOIN provider_yearly_data y ON p.npi = y.npi
             LEFT JOIN provider_enrichment e ON p.npi = e.npi
-            WHERE {where_sql_year}
+            WHERE {where_sql_yearly}
             ORDER BY y.total_claims DESC NULLS LAST
             LIMIT 10000
         """
-        cur.execute(data_sql, params_year)
+        cur.execute(data_sql, params_yearly)
     else:
+        where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
         data_sql = f"""
             SELECT
                 p.npi, p.first_name, p.last_name, p.credentials,
@@ -489,6 +569,7 @@ def export_providers():
                 COALESCE(SUM(y.total_services), 0) as total_services,
                 COALESCE(SUM(y.total_beneficiaries), 0) as total_beneficiaries,
                 NULL as data_year,
+                NULL as hcpcs_code,
                 COALESCE(e.patient_focus, 'Pending') as patient_focus
             FROM providers p
             LEFT JOIN provider_yearly_data y ON p.npi = y.npi
@@ -528,7 +609,7 @@ def export_providers():
 
     # Headers
     headers = ['NPI', 'First Name', 'Last Name', 'Credentials', 'Specialty',
-               'Patient Focus', 'Total Claims', 'Beneficiaries', 'City', 'State', 'Year',
+               'Patient Focus', 'Total Claims', 'Beneficiaries', 'City', 'State', 'Year', 'HCPCS Code',
                'Clinic Name', 'Clinic Address', 'Clinic City', 'Clinic State', 'Clinic Zip']
     ws.append(headers)
 
@@ -553,6 +634,7 @@ def export_providers():
                     p['cms_city'] if i == 0 else '',
                     p['cms_state'] if i == 0 else '',
                     p['data_year'] if i == 0 else '',
+                    p.get('hcpcs_code', '') if i == 0 else '',
                     clinic.get('clinic_name', ''),
                     clinic.get('street_address', ''),
                     clinic.get('city', ''),
@@ -565,6 +647,7 @@ def export_providers():
                 p['npi'], p['first_name'], p['last_name'], p['credentials'],
                 p['specialty_desc'], p['patient_focus'], p['total_claims'],
                 p['total_beneficiaries'], p['cms_city'], p['cms_state'], p['data_year'],
+                p.get('hcpcs_code', ''),
                 '', '', '', '', ''
             ]
             ws.append(row)
@@ -581,7 +664,8 @@ def export_providers():
 
     # Return as download
     year_str = year if year and year != 'all' else 'all_years'
-    filename = f"cms_providers_{year_str}.xlsx"
+    hcpcs_str = hcpcs_code if hcpcs_code and hcpcs_code != 'all' else 'all_codes'
+    filename = f"cms_providers_{hcpcs_str}_{year_str}.xlsx"
 
     return Response(
         output.getvalue(),
