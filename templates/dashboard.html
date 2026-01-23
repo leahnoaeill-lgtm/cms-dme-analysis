@@ -527,7 +527,7 @@
         <!-- Data Table -->
         <div class="data-section">
             <div class="data-header">
-                <h3>Provider Records <span id="yearBadge" class="year-badge">All Years</span></h3>
+                <h3>Provider Records <span id="hcpcsBadge" class="year-badge">All Codes</span> <span id="yearBadge" class="year-badge">All Years</span></h3>
                 <div style="display: flex; align-items: center; gap: 15px;">
                     <span class="result-count" id="resultCount">Loading...</span>
                     <button class="btn" onclick="exportToExcel()" title="Download as Excel">
@@ -593,11 +593,14 @@
         async function onHcpcsFilterChange(hcpcsCode) {
             // Update header description
             const hcpcsDesc = document.getElementById('hcpcsDescription');
+            const hcpcsBadge = document.getElementById('hcpcsBadge');
             if (hcpcsCode === 'all') {
                 hcpcsDesc.textContent = 'All HCPCS Codes';
+                hcpcsBadge.textContent = 'All Codes';
             } else {
                 const description = hcpcsDescriptions[hcpcsCode] || 'Unknown';
                 hcpcsDesc.textContent = `HCPCS Code ${hcpcsCode} - ${description}`;
+                hcpcsBadge.textContent = hcpcsCode;
             }
             // Reload aggregates and providers
             const year = document.getElementById('yearFilterTop').value;
@@ -840,6 +843,7 @@
             document.getElementById('yearFilterTop').value = 'all';
             document.getElementById('hcpcsFilterTop').value = 'all';
             document.getElementById('hcpcsDescription').textContent = 'All HCPCS Codes';
+            document.getElementById('hcpcsBadge').textContent = 'All Codes';
             onYearFilterChange('all');
         }
 
