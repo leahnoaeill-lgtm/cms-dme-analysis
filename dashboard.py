@@ -9,8 +9,16 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 from openpyxl import Workbook
 from io import BytesIO
+import requests
+import json
+import time
+import threading
+from datetime import datetime
 
 app = Flask(__name__)
+
+# Background job tracking
+active_jobs = {}
 
 DB_CONFIG = {
     "dbname": "cms_analysis",
@@ -672,6 +680,489 @@ def export_providers():
         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         headers={'Content-Disposition': f'attachment; filename={filename}'}
     )
+
+# ============== ADMIN API ENDPOINTS ==============
+
+@app.route('/api/admin/versions')
+def get_dataset_versions():
+    """Get all known dataset versions."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    # First check if the table exists, create if not
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS dataset_versions (
+            id SERIAL PRIMARY KEY,
+            data_year INTEGER NOT NULL UNIQUE,
+            dataset_uuid VARCHAR(50) NOT NULL,
+            description VARCHAR(255),
+            is_active BOOLEAN DEFAULT TRUE,
+            last_refreshed TIMESTAMP,
+            record_count INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.commit()
+
+    # Check if we need to seed the data
+    cur.execute("SELECT COUNT(*) as count FROM dataset_versions")
+    if cur.fetchone()['count'] == 0:
+        # Seed with known versions
+        versions = [
+            (2014, 'b834498f-158e-4152-9d63-13c946118033', 'CMS DME 2014'),
+            (2015, 'af043480-65c0-436c-bd1b-3e45300a34a7', 'CMS DME 2015'),
+            (2016, '862a02e8-e97b-41d0-a5d3-8f314db03d62', 'CMS DME 2016'),
+            (2017, 'f3d2da82-4383-4c9a-b559-fb94c7d8ddfc', 'CMS DME 2017'),
+            (2018, '55290cc6-c6e9-41e3-9896-dc8c4a35daf7', 'CMS DME 2018'),
+            (2019, 'eb0019f6-791d-4065-ae4e-4761d2f6c9f2', 'CMS DME 2019'),
+            (2020, '323df359-ceac-4525-a350-e2cd9eb128fe', 'CMS DME 2020'),
+            (2021, '46ae675c-bc81-40ca-aa79-64da1c1ec9d9', 'CMS DME 2021'),
+            (2022, '0dd53b4b-67ba-48c7-b8fa-fecbdfc83b70', 'CMS DME 2022'),
+            (2023, '86b4807a-d63a-44be-bfdf-ffd398d5e623', 'CMS DME 2023'),
+        ]
+        for year, uuid, desc in versions:
+            cur.execute("""
+                INSERT INTO dataset_versions (data_year, dataset_uuid, description)
+                VALUES (%s, %s, %s) ON CONFLICT (data_year) DO NOTHING
+            """, (year, uuid, desc))
+        conn.commit()
+
+    # Get all versions with their status
+    cur.execute("""
+        SELECT dv.*,
+               (SELECT COUNT(*) FROM provider_yearly_data WHERE data_year = dv.data_year) as db_record_count
+        FROM dataset_versions dv
+        ORDER BY data_year DESC
+    """)
+    versions = [dict(row) for row in cur.fetchall()]
+
+    cur.close()
+    conn.close()
+    return jsonify(versions)
+
+@app.route('/api/admin/versions', methods=['POST'])
+def add_dataset_version():
+    """Add or update a dataset version."""
+    data = request.get_json()
+    year = data.get('year')
+    uuid = data.get('uuid')
+    description = data.get('description', f'CMS DME {year}')
+
+    if not year or not uuid:
+        return jsonify({'error': 'Year and UUID are required'}), 400
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        INSERT INTO dataset_versions (data_year, dataset_uuid, description)
+        VALUES (%s, %s, %s)
+        ON CONFLICT (data_year) DO UPDATE SET
+            dataset_uuid = EXCLUDED.dataset_uuid,
+            description = EXCLUDED.description,
+            updated_at = CURRENT_TIMESTAMP
+        RETURNING *
+    """, (year, uuid, description))
+
+    result = dict(cur.fetchone())
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    return jsonify(result)
+
+@app.route('/api/admin/refresh', methods=['POST'])
+def refresh_data():
+    """Trigger data refresh for specified years and HCPCS codes."""
+    data = request.get_json()
+    years = data.get('years', [])
+    hcpcs_codes = data.get('hcpcs_codes', ['E0483', 'E0482'])
+    run_enrichment = data.get('enrich', False)
+
+    if not years:
+        return jsonify({'error': 'At least one year is required'}), 400
+
+    # Create job record
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    # Create admin_jobs table if not exists
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS admin_jobs (
+            id SERIAL PRIMARY KEY,
+            job_type VARCHAR(50) NOT NULL,
+            status VARCHAR(20) DEFAULT 'pending',
+            parameters JSONB,
+            progress INTEGER DEFAULT 0,
+            total_items INTEGER,
+            result_message TEXT,
+            started_at TIMESTAMP,
+            completed_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.commit()
+
+    cur.execute("""
+        INSERT INTO admin_jobs (job_type, status, parameters, total_items)
+        VALUES ('refresh', 'pending', %s, %s)
+        RETURNING id
+    """, (json.dumps({'years': years, 'hcpcs_codes': hcpcs_codes, 'enrich': run_enrichment}), len(years) * len(hcpcs_codes)))
+
+    job_id = cur.fetchone()['id']
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    # Start background job
+    thread = threading.Thread(target=run_refresh_job, args=(job_id, years, hcpcs_codes, run_enrichment))
+    thread.daemon = True
+    thread.start()
+
+    return jsonify({'job_id': job_id, 'status': 'started'})
+
+def run_refresh_job(job_id, years, hcpcs_codes, run_enrichment=False):
+    """Background job to refresh data."""
+    conn = psycopg2.connect(**DB_CONFIG, cursor_factory=RealDictCursor)
+    cur = conn.cursor()
+
+    cur.execute("UPDATE admin_jobs SET status = 'running', started_at = NOW() WHERE id = %s", (job_id,))
+    conn.commit()
+
+    progress = 0
+    total = len(years) * len(hcpcs_codes)
+    results = []
+    affected_npis = set()  # Track NPIs added/updated during refresh
+
+    try:
+        # Get dataset UUIDs
+        cur.execute("SELECT data_year, dataset_uuid FROM dataset_versions WHERE data_year = ANY(%s)", (years,))
+        uuid_map = {row['data_year']: row['dataset_uuid'] for row in cur.fetchall()}
+
+        for year in years:
+            if year not in uuid_map:
+                results.append(f"Year {year}: No UUID found, skipped")
+                continue
+
+            uuid = uuid_map[year]
+
+            for hcpcs_code in hcpcs_codes:
+                try:
+                    records = download_cms_data(year, uuid, hcpcs_code)
+                    if records:
+                        new_providers, yearly_records, npis = load_records_to_db(records, year, hcpcs_code, conn, return_npis=True)
+                        affected_npis.update(npis)
+                        results.append(f"{hcpcs_code} {year}: {len(records)} records, {new_providers} new providers")
+
+                        # Update last_refreshed
+                        cur.execute("""
+                            UPDATE dataset_versions
+                            SET last_refreshed = NOW(), record_count = %s
+                            WHERE data_year = %s
+                        """, (len(records), year))
+                        conn.commit()
+                    else:
+                        results.append(f"{hcpcs_code} {year}: No data returned")
+                except Exception as e:
+                    results.append(f"{hcpcs_code} {year}: Error - {str(e)}")
+
+                progress += 1
+                cur.execute("UPDATE admin_jobs SET progress = %s WHERE id = %s", (progress, job_id))
+                conn.commit()
+                time.sleep(1)  # Rate limiting
+
+        # Run enrichment on affected providers if requested
+        if run_enrichment and affected_npis:
+            results.append(f"\nStarting enrichment for {len(affected_npis)} providers...")
+            cur.execute("UPDATE admin_jobs SET result_message = %s WHERE id = %s", ('\n'.join(results), job_id))
+            conn.commit()
+
+            enriched, failed = enrich_providers(list(affected_npis), conn, cur, job_id)
+            results.append(f"Enrichment complete: {enriched} enriched, {failed} failed")
+
+        cur.execute("""
+            UPDATE admin_jobs
+            SET status = 'completed', completed_at = NOW(), result_message = %s
+            WHERE id = %s
+        """, ('\n'.join(results), job_id))
+
+    except Exception as e:
+        cur.execute("""
+            UPDATE admin_jobs
+            SET status = 'failed', completed_at = NOW(), result_message = %s
+            WHERE id = %s
+        """, (str(e), job_id))
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def enrich_providers(npis, conn, cur, job_id=None):
+    """Enrich a specific list of providers."""
+    NPI_REGISTRY_URL = "https://npiregistry.cms.hhs.gov/api/"
+    session = requests.Session()
+    session.headers.update({'User-Agent': 'Mozilla/5.0 CMS-Analysis-Tool/1.0'})
+
+    enriched = 0
+    failed = 0
+
+    for npi in npis:
+        try:
+            # Query NPI Registry
+            response = session.get(NPI_REGISTRY_URL, params={'number': npi, 'version': '2.1'}, timeout=30)
+            response.raise_for_status()
+            data = response.json()
+
+            patient_focus = 'Unknown'
+            if data.get('result_count', 0) > 0:
+                result = data['results'][0]
+
+                # Extract clinic info
+                addresses = result.get('addresses', [])
+                for addr in addresses:
+                    if addr.get('address_purpose') == 'LOCATION':
+                        cur.execute("""
+                            INSERT INTO clinics (npi, street_address, city, state, zip, phone, source_name, is_primary)
+                            VALUES (%s, %s, %s, %s, %s, %s, 'NPI Registry', TRUE)
+                            ON CONFLICT DO NOTHING
+                        """, (
+                            npi,
+                            addr.get('address_1', ''),
+                            addr.get('city', ''),
+                            addr.get('state', ''),
+                            addr.get('postal_code', '')[:5] if addr.get('postal_code') else '',
+                            addr.get('telephone_number', ''),
+                        ))
+
+                # Determine patient focus from taxonomy
+                taxonomies = result.get('taxonomies', [])
+                for tax in taxonomies:
+                    desc = (tax.get('desc', '') or '').lower()
+                    if 'pediatric' in desc or 'child' in desc:
+                        patient_focus = 'Pediatric' if patient_focus == 'Unknown' else 'Both'
+                    elif 'adult' in desc or 'geriatric' in desc:
+                        patient_focus = 'Adult' if patient_focus == 'Unknown' else 'Both'
+
+            # Update enrichment status
+            cur.execute("""
+                UPDATE provider_enrichment
+                SET search_status = 'completed', patient_focus = %s, search_date = NOW()
+                WHERE npi = %s
+            """, (patient_focus, npi))
+            conn.commit()
+            enriched += 1
+
+        except Exception as e:
+            cur.execute("""
+                UPDATE provider_enrichment
+                SET search_status = 'failed', search_notes = %s, search_date = NOW()
+                WHERE npi = %s
+            """, (str(e)[:200], npi))
+            conn.commit()
+            failed += 1
+
+        time.sleep(1)  # Rate limiting
+
+    return enriched, failed
+
+def download_cms_data(year, uuid, hcpcs_code):
+    """Download CMS data for a specific year and HCPCS code."""
+    api_url = f"https://data.cms.gov/data-api/v1/dataset/{uuid}/data"
+    all_records = []
+    offset = 0
+    page_size = 25
+    max_records = 5000
+
+    session = requests.Session()
+    session.headers.update({
+        'User-Agent': 'Mozilla/5.0 CMS-Analysis-Tool/1.0',
+        'Accept': 'application/json'
+    })
+
+    while offset < max_records:
+        params = {
+            "filter[HCPCS_CD]": hcpcs_code,
+            "size": page_size,
+            "offset": offset
+        }
+
+        response = session.get(api_url, params=params, timeout=180)
+        response.raise_for_status()
+        page_data = response.json()
+
+        if not page_data:
+            break
+
+        all_records.extend(page_data)
+
+        if len(page_data) < page_size:
+            break
+
+        offset += page_size
+        time.sleep(1)
+
+    return all_records
+
+def safe_int(value):
+    if value is None or value == '':
+        return None
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return None
+
+def safe_float(value):
+    if value is None or value == '':
+        return None
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return None
+
+def load_records_to_db(records, year, hcpcs_code, conn, return_npis=False):
+    """Load records into the database."""
+    if not records:
+        return (0, 0, []) if return_npis else (0, 0)
+
+    cur = conn.cursor()
+    new_providers = 0
+    yearly_records = 0
+    processed_npis = []
+
+    for record in records:
+        npi = record.get('Rfrg_NPI')
+        if not npi:
+            continue
+
+        processed_npis.append(npi)
+
+        # Insert or update provider
+        cur.execute("""
+            INSERT INTO providers (
+                npi, last_name, first_name, middle_initial, credentials, entity_code,
+                cms_street1, cms_street2, cms_city, cms_state, cms_zip, cms_country,
+                specialty_code, specialty_desc, specialty_source,
+                hcpcs_code, hcpcs_desc
+            ) VALUES (
+                %s, %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s, %s,
+                %s, %s, %s,
+                %s, %s
+            )
+            ON CONFLICT (npi) DO UPDATE SET updated_at = CURRENT_TIMESTAMP
+            RETURNING (xmax = 0) as inserted
+        """, (
+            npi,
+            record.get('Rfrg_Prvdr_Last_Name_Org'),
+            record.get('Rfrg_Prvdr_First_Name'),
+            record.get('Rfrg_Prvdr_MI'),
+            record.get('Rfrg_Prvdr_Crdntls'),
+            record.get('Rfrg_Prvdr_Ent_Cd'),
+            record.get('Rfrg_Prvdr_St1'),
+            record.get('Rfrg_Prvdr_St2'),
+            record.get('Rfrg_Prvdr_City'),
+            record.get('Rfrg_Prvdr_State_Abrvtn'),
+            record.get('Rfrg_Prvdr_Zip5'),
+            record.get('Rfrg_Prvdr_Cntry'),
+            record.get('Rfrg_Prvdr_Spclty_Cd'),
+            record.get('Rfrg_Prvdr_Spclty_Desc'),
+            record.get('Rfrg_Prvdr_Spclty_Srce'),
+            record.get('HCPCS_CD'),
+            record.get('HCPCS_Desc'),
+        ))
+
+        result = cur.fetchone()
+        if result and result['inserted']:
+            new_providers += 1
+
+        # Insert yearly billing data
+        cur.execute("""
+            INSERT INTO provider_yearly_data (
+                npi, data_year, hcpcs_code,
+                total_suppliers, total_claims, total_services, total_beneficiaries,
+                avg_submitted_charge, avg_medicare_allowed, avg_medicare_payment, avg_medicare_standardized,
+                supplier_rental_ind
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (npi, data_year, hcpcs_code) DO UPDATE SET
+                total_claims = EXCLUDED.total_claims,
+                total_beneficiaries = EXCLUDED.total_beneficiaries,
+                updated_at = CURRENT_TIMESTAMP
+        """, (
+            npi, year, hcpcs_code,
+            safe_int(record.get('Tot_Suplrs')),
+            safe_int(record.get('Tot_Suplr_Clms')),
+            safe_int(record.get('Tot_Suplr_Srvcs')),
+            safe_int(record.get('Tot_Suplr_Benes')),
+            safe_float(record.get('Avg_Suplr_Sbmtd_Chrg')),
+            safe_float(record.get('Avg_Suplr_Mdcr_Alowd_Amt')),
+            safe_float(record.get('Avg_Suplr_Mdcr_Pymt_Amt')),
+            safe_float(record.get('Avg_Suplr_Mdcr_Stdzd_Amt')),
+            record.get('Suplr_Rentl_Ind'),
+        ))
+        if cur.rowcount > 0:
+            yearly_records += 1
+
+    conn.commit()
+
+    # Create enrichment records for new NPIs
+    cur.execute("""
+        INSERT INTO provider_enrichment (npi, search_status)
+        SELECT npi, 'pending' FROM providers
+        WHERE npi NOT IN (SELECT npi FROM provider_enrichment)
+        ON CONFLICT (npi) DO NOTHING
+    """)
+    conn.commit()
+    cur.close()
+
+    if return_npis:
+        return new_providers, yearly_records, processed_npis
+    return new_providers, yearly_records
+
+@app.route('/api/admin/jobs')
+def get_jobs():
+    """Get recent admin jobs."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT * FROM admin_jobs
+        ORDER BY created_at DESC
+        LIMIT 20
+    """)
+    jobs = [dict(row) for row in cur.fetchall()]
+
+    # Convert datetime objects to strings
+    for job in jobs:
+        for key in ['started_at', 'completed_at', 'created_at']:
+            if job.get(key):
+                job[key] = job[key].isoformat()
+
+    cur.close()
+    conn.close()
+    return jsonify(jobs)
+
+@app.route('/api/admin/jobs/<int:job_id>')
+def get_job(job_id):
+    """Get a specific job status."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute("SELECT * FROM admin_jobs WHERE id = %s", (job_id,))
+    job = cur.fetchone()
+
+    cur.close()
+    conn.close()
+
+    if not job:
+        return jsonify({'error': 'Job not found'}), 404
+
+    job = dict(job)
+    for key in ['started_at', 'completed_at', 'created_at']:
+        if job.get(key):
+            job[key] = job[key].isoformat()
+
+    return jsonify(job)
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5001)

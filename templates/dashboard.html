@@ -376,13 +376,259 @@
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
+
+        /* Admin Menu Styles */
+        .admin-menu-container {
+            position: relative;
+            display: inline-block;
+        }
+        .admin-menu-btn {
+            background: rgba(255,255,255,0.2);
+            border: none;
+            border-radius: 8px;
+            padding: 8px 12px;
+            cursor: pointer;
+            color: white;
+            font-size: 1.5rem;
+            line-height: 1;
+            transition: background 0.2s;
+        }
+        .admin-menu-btn:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        .admin-dropdown {
+            display: none;
+            position: absolute;
+            right: 0;
+            top: 100%;
+            margin-top: 8px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            min-width: 200px;
+            z-index: 1000;
+            overflow: hidden;
+        }
+        .admin-dropdown.show {
+            display: block;
+        }
+        .admin-dropdown-item {
+            display: block;
+            width: 100%;
+            padding: 12px 16px;
+            text-align: left;
+            border: none;
+            background: none;
+            cursor: pointer;
+            color: #333;
+            font-size: 0.95rem;
+            transition: background 0.2s;
+        }
+        .admin-dropdown-item:hover {
+            background: #f7fafc;
+        }
+        .admin-dropdown-item i {
+            margin-right: 10px;
+            width: 20px;
+            display: inline-block;
+        }
+        .admin-dropdown-divider {
+            height: 1px;
+            background: #e2e8f0;
+            margin: 4px 0;
+        }
+
+        /* Modal Styles */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 2000;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-overlay.show {
+            display: flex;
+        }
+        .modal {
+            background: white;
+            border-radius: 12px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        }
+        .modal-header {
+            padding: 20px;
+            border-bottom: 1px solid #e2e8f0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .modal-header h2 {
+            font-size: 1.25rem;
+            color: #1a365d;
+        }
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: #666;
+            padding: 0;
+            line-height: 1;
+        }
+        .modal-body {
+            padding: 20px;
+        }
+        .modal-footer {
+            padding: 15px 20px;
+            border-top: 1px solid #e2e8f0;
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+        .checkbox-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin: 10px 0;
+        }
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 12px;
+            background: #f7fafc;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        .checkbox-item:hover {
+            background: #edf2f7;
+        }
+        .checkbox-item input {
+            cursor: pointer;
+        }
+        .job-status {
+            margin-top: 15px;
+            padding: 15px;
+            background: #f7fafc;
+            border-radius: 8px;
+        }
+        .job-status.running {
+            background: #ebf8ff;
+            border: 1px solid #90cdf4;
+        }
+        .job-status.completed {
+            background: #f0fff4;
+            border: 1px solid #9ae6b4;
+        }
+        .job-status.failed {
+            background: #fff5f5;
+            border: 1px solid #feb2b2;
+        }
+        .progress-bar {
+            height: 8px;
+            background: #e2e8f0;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+        .progress-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #4299e1, #2b6cb0);
+            transition: width 0.3s;
+        }
+        .info-text {
+            color: #666;
+            font-size: 0.9rem;
+            margin: 10px 0;
+        }
+        .version-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .version-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .version-item:last-child {
+            border-bottom: none;
+        }
+        .version-year {
+            font-weight: 600;
+            color: #1a365d;
+        }
+        .version-status {
+            font-size: 0.85rem;
+            color: #666;
+        }
+        .version-select-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-height: 280px;
+            overflow-y: auto;
+        }
+        .version-select-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 12px;
+            background: #f7fafc;
+            border-radius: 6px;
+        }
+        .version-select-item:hover {
+            background: #edf2f7;
+        }
+        .api-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 8px;
+            background: #ebf8ff;
+            color: #2b6cb0;
+            text-decoration: none;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            transition: background 0.2s;
+        }
+        .api-link:hover {
+            background: #bee3f8;
+        }
     </style>
 </head>
 <body>
     <header>
-        <div class="container">
-            <h1>CMS DME Analysis Dashboard</h1>
-            <p id="hcpcsDescription">HCPCS Code E0483 - High Frequency Chest Wall Oscillation System</p>
+        <div class="container" style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <h1>CMS DME Analysis Dashboard</h1>
+                <p id="hcpcsDescription">HCPCS Code E0483 - High Frequency Chest Wall Oscillation System</p>
+            </div>
+            <div class="admin-menu-container">
+                <button class="admin-menu-btn" onclick="toggleAdminMenu()" title="Admin Menu">&#8942;</button>
+                <div class="admin-dropdown" id="adminDropdown">
+                    <button class="admin-dropdown-item" onclick="openRefreshModal()">
+                        <i>&#x21BB;</i> Refresh Data
+                    </button>
+                    <div class="admin-dropdown-divider"></div>
+                    <button class="admin-dropdown-item" onclick="openVersionsModal()">
+                        <i>&#x1F4C5;</i> Manage Versions
+                    </button>
+                    <button class="admin-dropdown-item" onclick="openJobsModal()">
+                        <i>&#x1F4CB;</i> View Jobs
+                    </button>
+                </div>
+            </div>
         </div>
     </header>
 
@@ -871,6 +1117,311 @@
         loadYears();
         loadHcpcsCodes();
         searchProviders(1);
+
+        // ============== ADMIN MENU FUNCTIONS ==============
+
+        function toggleAdminMenu() {
+            const dropdown = document.getElementById('adminDropdown');
+            dropdown.classList.toggle('show');
+        }
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.admin-menu-container')) {
+                document.getElementById('adminDropdown').classList.remove('show');
+            }
+        });
+
+        // Modal functions
+        function openModal(modalId) {
+            document.getElementById(modalId).classList.add('show');
+            document.getElementById('adminDropdown').classList.remove('show');
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.remove('show');
+        }
+
+        // Refresh Data Modal
+        async function openRefreshModal() {
+            openModal('refreshModal');
+            document.getElementById('refreshVersionsList').innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+            document.getElementById('refreshJobStatus').innerHTML = '';
+
+            const response = await fetch('/api/admin/versions');
+            const versions = await response.json();
+
+            let html = '<div class="version-select-list">';
+            versions.forEach(v => {
+                const checked = !v.last_refreshed ? 'checked' : '';
+                const status = v.last_refreshed ? `Last: ${new Date(v.last_refreshed).toLocaleDateString()}` : 'Never refreshed';
+                const apiUrl = `https://data.cms.gov/data-api/v1/dataset/${v.dataset_uuid}/data`;
+                html += `
+                    <div class="version-select-item">
+                        <label class="checkbox-item" style="flex:1">
+                            <input type="checkbox" name="refreshYear" value="${v.data_year}" ${checked}>
+                            <span style="font-weight:600">${v.data_year}</span>
+                            <small style="color:#666; margin-left:5px">(${v.db_record_count || 0} records)</small>
+                        </label>
+                        <a href="${apiUrl}" target="_blank" class="api-link" title="Open CMS API endpoint">
+                            <span style="font-size:0.75rem">API</span> &#x2197;
+                        </a>
+                    </div>
+                `;
+            });
+            html += '</div>';
+            document.getElementById('refreshVersionsList').innerHTML = html;
+        }
+
+        async function startRefresh() {
+            const checkboxes = document.querySelectorAll('input[name="refreshYear"]:checked');
+            const years = Array.from(checkboxes).map(cb => parseInt(cb.value));
+
+            if (years.length === 0) {
+                alert('Please select at least one year to refresh');
+                return;
+            }
+
+            const hcpcsCheckboxes = document.querySelectorAll('input[name="refreshHcpcs"]:checked');
+            const hcpcs_codes = Array.from(hcpcsCheckboxes).map(cb => cb.value);
+
+            if (hcpcs_codes.length === 0) {
+                alert('Please select at least one HCPCS code');
+                return;
+            }
+
+            const enrich = document.getElementById('refreshEnrich').checked;
+
+            document.getElementById('refreshJobStatus').innerHTML = '<div class="job-status running">Starting refresh job...</div>';
+
+            const response = await fetch('/api/admin/refresh', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ years, hcpcs_codes, enrich })
+            });
+            const data = await response.json();
+
+            if (data.job_id) {
+                pollJobStatus(data.job_id, 'refreshJobStatus');
+            }
+        }
+
+        // Versions Modal
+        async function openVersionsModal() {
+            openModal('versionsModal');
+            await loadVersionsList();
+        }
+
+        async function loadVersionsList() {
+            document.getElementById('versionsList').innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+
+            const response = await fetch('/api/admin/versions');
+            const versions = await response.json();
+
+            let html = '<div class="version-list">';
+            versions.forEach(v => {
+                const status = v.last_refreshed
+                    ? `${v.db_record_count || 0} records, refreshed ${new Date(v.last_refreshed).toLocaleDateString()}`
+                    : `${v.db_record_count || 0} records in DB`;
+                html += `
+                    <div class="version-item">
+                        <div>
+                            <span class="version-year">${v.data_year}</span>
+                            <div class="version-status">${status}</div>
+                        </div>
+                        <small style="color:#999; font-size:0.75rem">${v.dataset_uuid.substring(0,8)}...</small>
+                    </div>
+                `;
+            });
+            html += '</div>';
+            html += `
+                <div style="margin-top:15px; padding-top:15px; border-top:1px solid #e2e8f0">
+                    <p class="info-text">Add a new year (find UUID on <a href="https://data.cms.gov/provider-summary-by-type-of-service/medicare-durable-medical-equipment-devices-supplies/medicare-durable-medical-equipment-devices-supplies-by-referring-provider-and-service/api-docs" target="_blank">CMS website</a>):</p>
+                    <div style="display:flex; gap:10px; margin-top:10px">
+                        <input type="number" id="newVersionYear" placeholder="Year" style="width:80px; padding:8px; border:1px solid #e2e8f0; border-radius:6px">
+                        <input type="text" id="newVersionUuid" placeholder="Dataset UUID" style="flex:1; padding:8px; border:1px solid #e2e8f0; border-radius:6px">
+                        <button class="btn" onclick="addVersion()">Add</button>
+                    </div>
+                </div>
+            `;
+            document.getElementById('versionsList').innerHTML = html;
+        }
+
+        async function addVersion() {
+            const year = parseInt(document.getElementById('newVersionYear').value);
+            const uuid = document.getElementById('newVersionUuid').value.trim();
+
+            if (!year || !uuid) {
+                alert('Please enter both year and UUID');
+                return;
+            }
+
+            const response = await fetch('/api/admin/versions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ year, uuid })
+            });
+
+            if (response.ok) {
+                document.getElementById('newVersionYear').value = '';
+                document.getElementById('newVersionUuid').value = '';
+                await loadVersionsList();
+                loadYears();  // Refresh year dropdown
+            } else {
+                alert('Failed to add version');
+            }
+        }
+
+        // Jobs Modal
+        async function openJobsModal() {
+            openModal('jobsModal');
+            await loadJobsList();
+        }
+
+        async function loadJobsList() {
+            document.getElementById('jobsList').innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+
+            const response = await fetch('/api/admin/jobs');
+            const jobs = await response.json();
+
+            if (jobs.length === 0) {
+                document.getElementById('jobsList').innerHTML = '<p class="info-text">No jobs found</p>';
+                return;
+            }
+
+            let html = '';
+            jobs.forEach(job => {
+                const statusClass = job.status === 'completed' ? 'completed' : job.status === 'running' ? 'running' : job.status === 'failed' ? 'failed' : '';
+                const progress = job.total_items ? Math.round((job.progress / job.total_items) * 100) : 0;
+                html += `
+                    <div class="job-status ${statusClass}" style="margin-bottom:10px">
+                        <div style="display:flex; justify-content:space-between">
+                            <strong>${job.job_type.toUpperCase()}</strong>
+                            <span>${job.status}</span>
+                        </div>
+                        <div style="font-size:0.85rem; color:#666; margin-top:5px">
+                            ${new Date(job.created_at).toLocaleString()}
+                        </div>
+                        ${job.status === 'running' ? `
+                            <div class="progress-bar">
+                                <div class="progress-bar-fill" style="width:${progress}%"></div>
+                            </div>
+                            <div style="font-size:0.8rem; margin-top:5px">${job.progress}/${job.total_items}</div>
+                        ` : ''}
+                        ${job.result_message ? `<div style="font-size:0.85rem; margin-top:8px; white-space:pre-line">${job.result_message}</div>` : ''}
+                    </div>
+                `;
+            });
+            document.getElementById('jobsList').innerHTML = html;
+        }
+
+        // Poll job status
+        function pollJobStatus(jobId, statusElementId) {
+            const poll = async () => {
+                const response = await fetch(`/api/admin/jobs/${jobId}`);
+                const job = await response.json();
+
+                const progress = job.total_items ? Math.round((job.progress / job.total_items) * 100) : 0;
+                let html = `<div class="job-status ${job.status}">`;
+                html += `<strong>Status:</strong> ${job.status}`;
+
+                if (job.status === 'running') {
+                    html += `
+                        <div class="progress-bar">
+                            <div class="progress-bar-fill" style="width:${progress}%"></div>
+                        </div>
+                        <div style="font-size:0.85rem; margin-top:5px">Progress: ${job.progress}/${job.total_items}</div>
+                    `;
+                }
+
+                if (job.result_message) {
+                    html += `<div style="margin-top:10px; white-space:pre-line; font-size:0.9rem">${job.result_message}</div>`;
+                }
+
+                html += '</div>';
+                document.getElementById(statusElementId).innerHTML = html;
+
+                if (job.status === 'running' || job.status === 'pending') {
+                    setTimeout(poll, 2000);
+                } else {
+                    // Refresh data after completion
+                    searchProviders(1);
+                    loadYears();
+                }
+            };
+            poll();
+        }
     </script>
+
+    <!-- Refresh Modal -->
+    <div class="modal-overlay" id="refreshModal" onclick="if(event.target===this) closeModal('refreshModal')">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>Refresh Data from CMS</h2>
+                <button class="modal-close" onclick="closeModal('refreshModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="info-text">Select years to download/refresh data from CMS. This will fetch the latest data for the selected years.</p>
+                <h4 style="margin-top:15px; margin-bottom:10px">Select Years:</h4>
+                <div id="refreshVersionsList"></div>
+                <h4 style="margin-top:15px; margin-bottom:10px">Select HCPCS Codes:</h4>
+                <div class="checkbox-group">
+                    <label class="checkbox-item">
+                        <input type="checkbox" name="refreshHcpcs" value="E0483" checked>
+                        <span>E0483</span>
+                    </label>
+                    <label class="checkbox-item">
+                        <input type="checkbox" name="refreshHcpcs" value="E0482" checked>
+                        <span>E0482</span>
+                    </label>
+                </div>
+                <h4 style="margin-top:15px; margin-bottom:10px">Options:</h4>
+                <label class="checkbox-item" style="background:#ebf8ff; border:1px solid #90cdf4">
+                    <input type="checkbox" id="refreshEnrich" checked>
+                    <span>Run enrichment for refreshed providers</span>
+                </label>
+                <p class="info-text" style="margin-top:8px; font-size:0.85rem">Enrichment fetches clinic info and patient focus from NPI Registry (1 provider/sec rate limit).</p>
+                <div id="refreshJobStatus"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('refreshModal')">Cancel</button>
+                <button class="btn" onclick="startRefresh()">Start Refresh</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Versions Modal -->
+    <div class="modal-overlay" id="versionsModal" onclick="if(event.target===this) closeModal('versionsModal')">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>Manage Dataset Versions</h2>
+                <button class="modal-close" onclick="closeModal('versionsModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="info-text">Dataset versions map years to CMS API dataset UUIDs. Add new years when they become available on the CMS website.</p>
+                <div id="versionsList"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" onclick="closeModal('versionsModal')">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Jobs Modal -->
+    <div class="modal-overlay" id="jobsModal" onclick="if(event.target===this) closeModal('jobsModal')">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>Recent Jobs</h2>
+                <button class="modal-close" onclick="closeModal('jobsModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="jobsList"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="loadJobsList()">Refresh</button>
+                <button class="btn" onclick="closeModal('jobsModal')">Close</button>
+            </div>
+        </div>
+    </div>
 </body>
 </html>

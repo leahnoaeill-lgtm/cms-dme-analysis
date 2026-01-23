@@ -149,3 +149,47 @@ SELECT
     (SELECT COUNT(*) FROM clinics c WHERE c.npi = p.npi) as clinic_count
 FROM providers p
 LEFT JOIN provider_enrichment e ON p.npi = e.npi;
+
+-- Dataset versions table (for dynamic year/UUID management)
+CREATE TABLE IF NOT EXISTS dataset_versions (
+    id SERIAL PRIMARY KEY,
+    data_year INTEGER NOT NULL UNIQUE,
+    dataset_uuid VARCHAR(50) NOT NULL,
+    description VARCHAR(255),
+    is_active BOOLEAN DEFAULT TRUE,
+    last_refreshed TIMESTAMP,
+    record_count INTEGER,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Admin job tracking table
+CREATE TABLE IF NOT EXISTS admin_jobs (
+    id SERIAL PRIMARY KEY,
+    job_type VARCHAR(50) NOT NULL,  -- 'refresh' or 'enrich'
+    status VARCHAR(20) DEFAULT 'pending',  -- pending, running, completed, failed
+    parameters JSONB,
+    progress INTEGER DEFAULT 0,
+    total_items INTEGER,
+    result_message TEXT,
+    started_at TIMESTAMP,
+    completed_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Insert known dataset versions
+INSERT INTO dataset_versions (data_year, dataset_uuid, description) VALUES
+    (2014, 'b834498f-158e-4152-9d63-13c946118033', 'CMS DME 2014'),
+    (2015, 'af043480-65c0-436c-bd1b-3e45300a34a7', 'CMS DME 2015'),
+    (2016, '862a02e8-e97b-41d0-a5d3-8f314db03d62', 'CMS DME 2016'),
+    (2017, 'f3d2da82-4383-4c9a-b559-fb94c7d8ddfc', 'CMS DME 2017'),
+    (2018, '55290cc6-c6e9-41e3-9896-dc8c4a35daf7', 'CMS DME 2018'),
+    (2019, 'eb0019f6-791d-4065-ae4e-4761d2f6c9f2', 'CMS DME 2019'),
+    (2020, '323df359-ceac-4525-a350-e2cd9eb128fe', 'CMS DME 2020'),
+    (2021, '46ae675c-bc81-40ca-aa79-64da1c1ec9d9', 'CMS DME 2021'),
+    (2022, '0dd53b4b-67ba-48c7-b8fa-fecbdfc83b70', 'CMS DME 2022'),
+    (2023, '86b4807a-d63a-44be-bfdf-ffd398d5e623', 'CMS DME 2023')
+ON CONFLICT (data_year) DO NOTHING;
+
+CREATE INDEX IF NOT EXISTS idx_admin_jobs_status ON admin_jobs(status);
+CREATE INDEX IF NOT EXISTS idx_dataset_versions_year ON dataset_versions(data_year);
