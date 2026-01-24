@@ -589,21 +589,22 @@
         .version-select-item:hover {
             background: #edf2f7;
         }
-        .api-link {
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            padding: 4px 8px;
-            background: #ebf8ff;
-            color: #2b6cb0;
-            text-decoration: none;
+        .api-url-input {
+            flex: 1;
+            padding: 6px 10px;
+            border: 1px solid #e2e8f0;
             border-radius: 4px;
-            font-size: 0.8rem;
-            font-weight: 500;
-            transition: background 0.2s;
+            font-size: 0.75rem;
+            font-family: monospace;
+            color: #4a5568;
+            background: #fff;
+            cursor: text;
+            min-width: 0;
         }
-        .api-link:hover {
-            background: #bee3f8;
+        .api-url-input:focus {
+            outline: none;
+            border-color: #4299e1;
+            background: #ebf8ff;
         }
     </style>
 </head>
@@ -1158,14 +1159,12 @@
                 const apiUrl = `https://data.cms.gov/data-api/v1/dataset/${v.dataset_uuid}/data`;
                 html += `
                     <div class="version-select-item">
-                        <label class="checkbox-item" style="flex:1">
+                        <label class="checkbox-item">
                             <input type="checkbox" name="refreshYear" value="${v.data_year}" ${checked}>
                             <span style="font-weight:600">${v.data_year}</span>
                             <small style="color:#666; margin-left:5px">(${v.db_record_count || 0} records)</small>
                         </label>
-                        <a href="${apiUrl}" target="_blank" class="api-link" title="Open CMS API endpoint">
-                            <span style="font-size:0.75rem">API</span> &#x2197;
-                        </a>
+                        <input type="text" class="api-url-input" value="${apiUrl}" readonly onclick="this.select()" title="Click to select, then copy">
                     </div>
                 `;
             });
