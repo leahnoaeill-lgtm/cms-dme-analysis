@@ -193,3 +193,92 @@ ON CONFLICT (data_year) DO NOTHING;
 
 CREATE INDEX IF NOT EXISTS idx_admin_jobs_status ON admin_jobs(status);
 CREATE INDEX IF NOT EXISTS idx_dataset_versions_year ON dataset_versions(data_year);
+
+-- ============== SUPPLIER TABLES ==============
+
+-- Suppliers master table
+CREATE TABLE IF NOT EXISTS suppliers (
+    id SERIAL PRIMARY KEY,
+    npi VARCHAR(10) NOT NULL UNIQUE,
+    last_name VARCHAR(255),
+    first_name VARCHAR(255),
+    middle_initial VARCHAR(10),
+    credentials VARCHAR(50),
+    entity_code VARCHAR(10),
+    street1 VARCHAR(255),
+    street2 VARCHAR(255),
+    city VARCHAR(100),
+    state VARCHAR(2),
+    state_fips VARCHAR(5),
+    zip VARCHAR(10),
+    country VARCHAR(10),
+    ruca_code VARCHAR(10),
+    ruca_cat VARCHAR(10),
+    ruca_desc TEXT,
+    specialty_code VARCHAR(10),
+    specialty_desc VARCHAR(255),
+    specialty_source VARCHAR(50),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Supplier yearly data (per HCPCS code)
+CREATE TABLE IF NOT EXISTS supplier_yearly_data (
+    id SERIAL PRIMARY KEY,
+    npi VARCHAR(10) NOT NULL REFERENCES suppliers(npi),
+    data_year INTEGER NOT NULL,
+    hcpcs_code VARCHAR(10) NOT NULL,
+    hcpcs_desc TEXT,
+    rbcs_level VARCHAR(100),
+    rbcs_id VARCHAR(20),
+    rbcs_desc VARCHAR(255),
+    rental_indicator VARCHAR(1),
+    total_beneficiaries INTEGER,
+    total_claims INTEGER,
+    total_services INTEGER,
+    avg_submitted_charge DECIMAL(12,2),
+    avg_medicare_allowed DECIMAL(12,2),
+    avg_medicare_payment DECIMAL(12,2),
+    avg_medicare_standardized DECIMAL(12,2),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT supplier_yearly_unique UNIQUE (npi, data_year, hcpcs_code)
+);
+
+-- Supplier enrichment table
+CREATE TABLE IF NOT EXISTS supplier_enrichment (
+    id SERIAL PRIMARY KEY,
+    npi VARCHAR(10) NOT NULL UNIQUE REFERENCES suppliers(npi),
+    business_name VARCHAR(255),
+    search_status VARCHAR(20) DEFAULT 'pending',
+    search_date TIMESTAMP,
+    search_notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Supplier dataset versions
+CREATE TABLE IF NOT EXISTS supplier_dataset_versions (
+    id SERIAL PRIMARY KEY,
+    data_year INTEGER NOT NULL UNIQUE,
+    dataset_uuid VARCHAR(50) NOT NULL,
+    description VARCHAR(255),
+    is_active BOOLEAN DEFAULT TRUE,
+    last_refreshed TIMESTAMP,
+    record_count INTEGER,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Insert known supplier dataset version (2023)
+INSERT INTO supplier_dataset_versions (data_year, dataset_uuid, description) VALUES
+    (2023, '1746a83e-bb65-4300-8e02-21edbab77c6b', 'CMS DME Supplier 2023')
+ON CONFLICT (data_year) DO NOTHING;
+
+-- Indexes for supplier tables
+CREATE INDEX IF NOT EXISTS idx_suppliers_state ON suppliers(state);
+CREATE INDEX IF NOT EXISTS idx_suppliers_specialty ON suppliers(specialty_code);
+CREATE INDEX IF NOT EXISTS idx_supplier_yearly_npi ON supplier_yearly_data(npi);
+CREATE INDEX IF NOT EXISTS idx_supplier_yearly_year ON supplier_yearly_data(data_year);
+CREATE INDEX IF NOT EXISTS idx_supplier_yearly_hcpcs ON supplier_yearly_data(hcpcs_code);
+CREATE INDEX IF NOT EXISTS idx_supplier_enrichment_status ON supplier_enrichment(search_status);

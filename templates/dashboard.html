@@ -245,6 +245,101 @@
         .badge-unknown { background: #e2e8f0; color: #4a5568; }
         .badge-pending { background: #bee3f8; color: #2a4365; }
 
+        .parent-cell {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .edit-parent-btn {
+            background: none;
+            border: 1px solid #e2e8f0;
+            border-radius: 4px;
+            padding: 2px 6px;
+            cursor: pointer;
+            font-size: 0.7rem;
+            color: #666;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+        tr:hover .edit-parent-btn {
+            opacity: 1;
+        }
+        .edit-parent-btn:hover {
+            background: #f0f0f0;
+            color: #333;
+        }
+        .parent-search-input {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            font-size: 0.95rem;
+            margin-bottom: 10px;
+        }
+        .parent-search-results {
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+        }
+        .parent-search-item {
+            padding: 10px 15px;
+            border-bottom: 1px solid #f0f0f0;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .parent-search-item:hover {
+            background: #f7fafc;
+        }
+        .parent-search-item:last-child {
+            border-bottom: none;
+        }
+        .parent-search-item .name {
+            font-weight: 500;
+        }
+        .parent-search-item .count {
+            font-size: 0.8rem;
+            color: #666;
+        }
+        .duplicate-group {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            padding: 15px;
+        }
+        .duplicate-group h4 {
+            margin-bottom: 10px;
+            color: #333;
+        }
+        .duplicate-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .duplicate-item:last-child {
+            border-bottom: none;
+        }
+        .duplicate-item input[type="radio"] {
+            margin-right: 10px;
+        }
+        .merge-btn {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85rem;
+        }
+        .merge-btn:hover {
+            background: #43a047;
+        }
+
         .clinic-list {
             font-size: 0.8rem;
             color: #555;
@@ -606,6 +701,40 @@
             border-color: #4299e1;
             background: #ebf8ff;
         }
+
+        /* Tab Navigation Styles */
+        .tab-navigation {
+            display: flex;
+            gap: 0;
+            background: #1a365d;
+            padding: 0 20px;
+        }
+        .tab-btn {
+            padding: 15px 30px;
+            background: transparent;
+            border: none;
+            color: rgba(255,255,255,0.7);
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            border-bottom: 3px solid transparent;
+        }
+        .tab-btn:hover {
+            color: white;
+            background: rgba(255,255,255,0.1);
+        }
+        .tab-btn.active {
+            color: white;
+            border-bottom-color: #4299e1;
+            background: rgba(255,255,255,0.1);
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
     </style>
 </head>
 <body>
@@ -628,11 +757,22 @@
                     <button class="admin-dropdown-item" onclick="openJobsModal()">
                         <i>&#x1F4CB;</i> View Jobs
                     </button>
+                    <button class="admin-dropdown-item" onclick="openManageParentsModal()">
+                        <i>&#x1F3E2;</i> Manage Parents
+                    </button>
                 </div>
             </div>
         </div>
     </header>
 
+    <!-- Tab Navigation -->
+    <div class="tab-navigation">
+        <button class="tab-btn active" onclick="switchTab('provider')" id="providerTabBtn">Providers</button>
+        <button class="tab-btn" onclick="switchTab('supplier')" id="supplierTabBtn">Suppliers</button>
+    </div>
+
+    <!-- Provider Tab Content -->
+    <div id="providerTab" class="tab-content active">
     <div class="container">
         <!-- Prominent Filter Bar -->
         <div class="year-filter-bar">
@@ -791,6 +931,126 @@
             <div class="pagination" id="pagination"></div>
         </div>
     </div>
+    </div><!-- End Provider Tab -->
+
+    <!-- Supplier Tab Content -->
+    <div id="supplierTab" class="tab-content">
+    <div class="container">
+        <!-- Supplier Filter Bar -->
+        <div class="year-filter-bar">
+            <label for="supplierHcpcsFilter">HCPCS Code:</label>
+            <select id="supplierHcpcsFilter" onchange="onSupplierHcpcsChange(this.value)">
+                <option value="all">All Codes</option>
+                <option value="E0483">E0483</option>
+                <option value="E0482">E0482</option>
+            </select>
+            <label for="supplierYearFilter">Year:</label>
+            <select id="supplierYearFilter" onchange="onSupplierYearChange(this.value)">
+                <option value="all">All Years</option>
+            </select>
+            <span class="year-label" id="supplierYearDisplay">All Years</span>
+            <span style="margin-left: 20px; border-left: 1px solid #ccc; padding-left: 20px;">
+                <label style="display: inline-flex; align-items: center; cursor: pointer; font-weight: 500;">
+                    <input type="checkbox" id="excludeCompetitors" onchange="onExcludeCompetitorsChange()" style="margin-right: 8px; width: 18px; height: 18px; cursor: pointer;">
+                    Exclude Top 3 Competitors
+                </label>
+            </span>
+            <span style="margin-left: 20px; border-left: 1px solid #ccc; padding-left: 20px;">
+                <label style="display: inline-flex; align-items: center; cursor: pointer; font-weight: 500;">
+                    <input type="checkbox" id="groupByParent" onchange="onGroupByParentChange()" style="margin-right: 8px; width: 18px; height: 18px; cursor: pointer;">
+                    Group by Parent Company
+                </label>
+            </span>
+        </div>
+
+        <!-- Supplier Stats Cards -->
+        <div class="stats-grid">
+            <div class="stat-card info">
+                <h3>Total Suppliers</h3>
+                <div class="value" id="supplierTotalSuppliers">0</div>
+            </div>
+            <div class="stat-card">
+                <h3>Total Claims</h3>
+                <div class="value" id="supplierTotalClaims">0</div>
+            </div>
+            <div class="stat-card">
+                <h3>Total Beneficiaries</h3>
+                <div class="value" id="supplierTotalBeneficiaries">0</div>
+            </div>
+            <div class="stat-card warning">
+                <h3>Avg Claims/Supplier</h3>
+                <div class="value" id="supplierAvgClaims">0</div>
+            </div>
+        </div>
+
+        <!-- Supplier Charts -->
+        <div class="charts-row">
+            <div class="chart-card">
+                <h3>Top States by Claims</h3>
+                <div class="bar-chart" id="supplierStatesChart">
+                    <div class="loading"><div class="spinner"></div></div>
+                </div>
+            </div>
+            <div class="chart-card">
+                <h3>Top Specialties</h3>
+                <div class="bar-chart" id="supplierSpecialtiesChart">
+                    <div class="loading"><div class="spinner"></div></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Supplier Search Section -->
+        <div class="search-section">
+            <h3>Search Suppliers</h3>
+            <div class="search-form">
+                <div class="form-group">
+                    <label for="supplierNpi">NPI Number</label>
+                    <input type="text" id="supplierNpi" placeholder="Enter NPI...">
+                </div>
+                <div class="form-group">
+                    <label for="supplierName">Supplier Name</label>
+                    <input type="text" id="supplierName" placeholder="Name...">
+                </div>
+                <div class="form-group">
+                    <label for="supplierState">State</label>
+                    <select id="supplierState">
+                        <option value="">All States</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="supplierParentCompany">Parent Company</label>
+                    <select id="supplierParentCompany">
+                        <option value="all">All Companies</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <button class="btn" onclick="searchSuppliers()">Search</button>
+                    <button class="btn btn-secondary" onclick="resetSupplierSearch()">Reset</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Supplier Data Table -->
+        <div class="data-section">
+            <div class="data-header">
+                <h3>Supplier Records <span id="supplierHcpcsBadge" class="year-badge">All Codes</span> <span id="supplierYearBadge" class="year-badge">All Years</span></h3>
+                <div style="display: flex; align-items: center; gap: 15px;">
+                    <span class="result-count" id="supplierResultCount">Loading...</span>
+                    <button class="btn" onclick="exportSuppliers()" title="Download as Excel">
+                        <span style="margin-right: 5px;">&#x2B07;</span> Export XLS
+                    </button>
+                </div>
+            </div>
+            <div id="supplierTableContainer">
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>Loading suppliers...</p>
+                </div>
+            </div>
+            <div class="pagination" id="supplierPagination"></div>
+        </div>
+    </div>
+    </div><!-- End Supplier Tab -->
 
     <script>
         let currentPage = 1;
@@ -1113,6 +1373,376 @@
             window.location.href = `/api/export?${params}`;
         }
 
+        // ============== TAB SWITCHING ==============
+
+        let currentTab = 'provider';
+        let supplierCurrentPage = 1;
+        let supplierCurrentData = [];
+        let supplierInitialized = false;
+
+        function switchTab(tab) {
+            currentTab = tab;
+
+            // Update tab buttons
+            document.getElementById('providerTabBtn').classList.toggle('active', tab === 'provider');
+            document.getElementById('supplierTabBtn').classList.toggle('active', tab === 'supplier');
+
+            // Update tab content
+            document.getElementById('providerTab').classList.toggle('active', tab === 'provider');
+            document.getElementById('supplierTab').classList.toggle('active', tab === 'supplier');
+
+            // Initialize supplier data on first view
+            if (tab === 'supplier' && !supplierInitialized) {
+                supplierInitialized = true;
+                loadSupplierStates();
+                loadSupplierYears();
+                loadParentCompanies();
+                loadSupplierAggregates();
+                searchSuppliers(1);
+            }
+        }
+
+        // ============== SUPPLIER FUNCTIONS ==============
+
+        async function loadSupplierStates() {
+            const response = await fetch('/api/supplier/states');
+            const states = await response.json();
+            const select = document.getElementById('supplierState');
+            states.forEach(state => {
+                const option = document.createElement('option');
+                option.value = state;
+                option.textContent = state;
+                select.appendChild(option);
+            });
+        }
+
+        async function loadParentCompanies() {
+            const response = await fetch('/api/supplier/parent-companies');
+            const companies = await response.json();
+            const select = document.getElementById('supplierParentCompany');
+            select.innerHTML = '<option value="all">All Companies</option>';
+            companies.forEach(company => {
+                const option = document.createElement('option');
+                option.value = company.id;
+                option.textContent = `${company.name} (${company.supplier_count})`;
+                select.appendChild(option);
+            });
+        }
+
+        async function loadSupplierYears() {
+            const response = await fetch('/api/supplier/years');
+            const years = await response.json();
+            const select = document.getElementById('supplierYearFilter');
+            // Clear existing options except "All Years"
+            select.innerHTML = '<option value="all">All Years</option>';
+            years.forEach(year => {
+                const option = document.createElement('option');
+                option.value = year;
+                option.textContent = year;
+                select.appendChild(option);
+            });
+        }
+
+        async function loadSupplierAggregates() {
+            const year = document.getElementById('supplierYearFilter').value;
+            const hcpcs = document.getElementById('supplierHcpcsFilter').value;
+            const excludeCompetitors = document.getElementById('excludeCompetitors').checked;
+            const response = await fetch(`/api/supplier/aggregates?year=${year}&hcpcs_code=${hcpcs}&exclude_competitors=${excludeCompetitors}`);
+            const agg = await response.json();
+
+            document.getElementById('supplierTotalSuppliers').textContent = (agg.total_suppliers || 0).toLocaleString();
+            document.getElementById('supplierTotalClaims').textContent = (agg.total_claims || 0).toLocaleString();
+            document.getElementById('supplierTotalBeneficiaries').textContent = (agg.total_beneficiaries || 0).toLocaleString();
+            document.getElementById('supplierAvgClaims').textContent = agg.avg_claims || 0;
+
+            // Update top states chart
+            if (agg.top_states && agg.top_states.length > 0) {
+                const maxState = agg.top_states[0].total_claims || 1;
+                document.getElementById('supplierStatesChart').innerHTML = agg.top_states.map(item => `
+                    <div class="bar-item">
+                        <span class="bar-label">${item.state || 'N/A'}</span>
+                        <div class="bar-container">
+                            <div class="bar" style="width: ${Math.round((item.total_claims || 0) / maxState * 100)}%">
+                                ${(item.total_claims || 0).toLocaleString()}
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            } else {
+                document.getElementById('supplierStatesChart').innerHTML = '<p style="color:#666">No data available</p>';
+            }
+
+            // Update top specialties chart
+            if (agg.top_specialties && agg.top_specialties.length > 0) {
+                const maxSpec = agg.top_specialties[0].count || 1;
+                document.getElementById('supplierSpecialtiesChart').innerHTML = agg.top_specialties.slice(0, 6).map(item => `
+                    <div class="bar-item">
+                        <span class="bar-label" title="${item.specialty_desc}">${(item.specialty_desc || 'N/A').substring(0, 12)}${(item.specialty_desc || '').length > 12 ? '...' : ''}</span>
+                        <div class="bar-container">
+                            <div class="bar" style="width: ${Math.round(item.count / maxSpec * 100)}%">
+                                ${item.count}
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            } else {
+                document.getElementById('supplierSpecialtiesChart').innerHTML = '<p style="color:#666">No data available</p>';
+            }
+        }
+
+        async function onSupplierYearChange(year) {
+            const yearText = year === 'all' ? 'All Years' : year;
+            document.getElementById('supplierYearBadge').textContent = yearText;
+            document.getElementById('supplierYearDisplay').textContent = yearText;
+            await loadSupplierAggregates();
+            searchSuppliers(1);
+        }
+
+        async function onSupplierHcpcsChange(hcpcs) {
+            const badge = document.getElementById('supplierHcpcsBadge');
+            badge.textContent = hcpcs === 'all' ? 'All Codes' : hcpcs;
+            await loadSupplierAggregates();
+            searchSuppliers(1);
+        }
+
+        async function onExcludeCompetitorsChange() {
+            await loadSupplierAggregates();
+            searchSuppliers(1);
+        }
+
+        async function onGroupByParentChange() {
+            searchSuppliers(1);
+        }
+
+        async function searchSuppliers(page = 1) {
+            supplierCurrentPage = page;
+            const npi = document.getElementById('supplierNpi').value;
+            const name = document.getElementById('supplierName').value;
+            const state = document.getElementById('supplierState').value;
+            const year = document.getElementById('supplierYearFilter').value;
+            const hcpcs = document.getElementById('supplierHcpcsFilter').value;
+            const excludeCompetitors = document.getElementById('excludeCompetitors').checked;
+            const parentCompany = document.getElementById('supplierParentCompany').value;
+            const groupByParent = document.getElementById('groupByParent').checked;
+
+            document.getElementById('supplierTableContainer').innerHTML = `
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>Searching...</p>
+                </div>
+            `;
+
+            if (groupByParent) {
+                // Use grouped endpoint
+                const params = new URLSearchParams({
+                    year: year,
+                    hcpcs_code: hcpcs,
+                    exclude_competitors: excludeCompetitors
+                });
+                const response = await fetch(`/api/suppliers/grouped?${params}`);
+                const data = await response.json();
+                renderGroupedSupplierTable(data);
+                document.getElementById('supplierPagination').innerHTML = '';
+            } else {
+                // Use regular endpoint
+                const params = new URLSearchParams({
+                    npi, name, state,
+                    year: year,
+                    hcpcs_code: hcpcs,
+                    exclude_competitors: excludeCompetitors,
+                    parent_company: parentCompany,
+                    page: supplierCurrentPage,
+                    per_page: 50
+                });
+                const response = await fetch(`/api/suppliers?${params}`);
+                const data = await response.json();
+                renderSupplierTable(data);
+                renderSupplierPagination(data);
+            }
+        }
+
+        function renderSupplierTable(data) {
+            supplierCurrentData = data.suppliers;
+            document.getElementById('supplierResultCount').textContent =
+                `Showing ${data.suppliers.length} of ${data.total} suppliers`;
+
+            if (data.suppliers.length === 0) {
+                document.getElementById('supplierTableContainer').innerHTML = `
+                    <div class="loading">
+                        <p>No suppliers found matching your criteria.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            let html = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>NPI</th>
+                            <th>Name</th>
+                            <th>Parent Company</th>
+                            <th>Total Claims</th>
+                            <th>Beneficiaries</th>
+                            <th>Location</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            data.suppliers.forEach(s => {
+                const name = s.entity_code === 'O' ? s.last_name : `${s.first_name || ''} ${s.last_name || ''}`.trim();
+                const parentName = s.parent_company_name || 'Unknown';
+                const parentId = s.parent_company_id || '';
+                const parentClass = parentName === 'Independent' ? 'badge-unknown' : 'badge-adult';
+                html += `
+                    <tr>
+                        <td><span class="npi-link">${s.npi}</span></td>
+                        <td>${name}${s.credentials ? ', ' + s.credentials : ''}</td>
+                        <td>
+                            <div class="parent-cell">
+                                <span class="badge ${parentClass}" title="${parentName}">${parentName.length > 18 ? parentName.substring(0,15) + '...' : parentName}</span>
+                                <button class="edit-parent-btn" onclick="openEditParentModal('${s.npi}', '${parentName.replace(/'/g, "\\'")}', ${parentId})">Edit</button>
+                            </div>
+                        </td>
+                        <td>${(s.total_claims || 0).toLocaleString()}</td>
+                        <td>${(s.total_beneficiaries || 0).toLocaleString()}</td>
+                        <td>${s.city || ''}, ${s.state || ''}</td>
+                    </tr>
+                `;
+            });
+
+            html += '</tbody></table>';
+            document.getElementById('supplierTableContainer').innerHTML = html;
+        }
+
+        function renderGroupedSupplierTable(data) {
+            document.getElementById('supplierResultCount').textContent =
+                `Showing ${data.length} parent companies`;
+
+            if (data.length === 0) {
+                document.getElementById('supplierTableContainer').innerHTML = `
+                    <div class="loading">
+                        <p>No data found.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            let html = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Parent Company</th>
+                            <th>Ticker</th>
+                            <th>Suppliers</th>
+                            <th>Total Claims</th>
+                            <th>Beneficiaries</th>
+                            <th>Avg Claims/Supplier</th>
+                            <th>Market Share</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            const totalClaims = data.reduce((sum, d) => sum + (d.total_claims || 0), 0);
+
+            data.forEach(d => {
+                const marketShare = totalClaims > 0 ? ((d.total_claims || 0) / totalClaims * 100).toFixed(1) : 0;
+                const avgClaims = d.supplier_count > 0 ? Math.round((d.total_claims || 0) / d.supplier_count) : 0;
+                const tickerBadge = d.ticker ? `<span class="badge badge-adult">${d.ticker}</span>` : '';
+                html += `
+                    <tr>
+                        <td><a href="/parent/${d.id}" style="color: #1565c0; text-decoration: none; font-weight: 600;">${d.name}</a></td>
+                        <td>${tickerBadge}</td>
+                        <td>${(d.supplier_count || 0).toLocaleString()}</td>
+                        <td>${(d.total_claims || 0).toLocaleString()}</td>
+                        <td>${(d.total_beneficiaries || 0).toLocaleString()}</td>
+                        <td>${avgClaims.toLocaleString()}</td>
+                        <td>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <div style="background: #e0e0e0; border-radius: 4px; width: 100px; height: 16px;">
+                                    <div style="background: #4CAF50; border-radius: 4px; height: 100%; width: ${Math.min(marketShare, 100)}%;"></div>
+                                </div>
+                                <span>${marketShare}%</span>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            html += '</tbody></table>';
+            document.getElementById('supplierTableContainer').innerHTML = html;
+        }
+
+        function renderSupplierPagination(data) {
+            const container = document.getElementById('supplierPagination');
+            if (data.total_pages <= 1) {
+                container.innerHTML = '';
+                return;
+            }
+
+            let html = '';
+            html += `<button ${data.page <= 1 ? 'disabled' : ''} onclick="searchSuppliers(${data.page - 1})">Prev</button>`;
+
+            const startPage = Math.max(1, data.page - 2);
+            const endPage = Math.min(data.total_pages, data.page + 2);
+
+            if (startPage > 1) {
+                html += `<button onclick="searchSuppliers(1)">1</button>`;
+                if (startPage > 2) html += `<span style="padding: 8px">...</span>`;
+            }
+
+            for (let i = startPage; i <= endPage; i++) {
+                html += `<button class="${i === data.page ? 'active' : ''}" onclick="searchSuppliers(${i})">${i}</button>`;
+            }
+
+            if (endPage < data.total_pages) {
+                if (endPage < data.total_pages - 1) html += `<span style="padding: 8px">...</span>`;
+                html += `<button onclick="searchSuppliers(${data.total_pages})">${data.total_pages}</button>`;
+            }
+
+            html += `<button ${data.page >= data.total_pages ? 'disabled' : ''} onclick="searchSuppliers(${data.page + 1})">Next</button>`;
+
+            container.innerHTML = html;
+        }
+
+        function resetSupplierSearch() {
+            document.getElementById('supplierNpi').value = '';
+            document.getElementById('supplierName').value = '';
+            document.getElementById('supplierState').value = '';
+            document.getElementById('supplierYearFilter').value = 'all';
+            document.getElementById('supplierHcpcsFilter').value = 'all';
+            document.getElementById('supplierParentCompany').value = 'all';
+            document.getElementById('excludeCompetitors').checked = false;
+            document.getElementById('groupByParent').checked = false;
+            document.getElementById('supplierHcpcsBadge').textContent = 'All Codes';
+            document.getElementById('supplierYearBadge').textContent = 'All Years';
+            document.getElementById('supplierYearDisplay').textContent = 'All Years';
+            loadSupplierAggregates();
+            searchSuppliers(1);
+        }
+
+        function exportSuppliers() {
+            const npi = document.getElementById('supplierNpi').value;
+            const name = document.getElementById('supplierName').value;
+            const state = document.getElementById('supplierState').value;
+            const year = document.getElementById('supplierYearFilter').value;
+            const hcpcs = document.getElementById('supplierHcpcsFilter').value;
+            const excludeCompetitors = document.getElementById('excludeCompetitors').checked;
+            const parentCompany = document.getElementById('supplierParentCompany').value;
+
+            const params = new URLSearchParams({
+                npi, name, state,
+                year: year,
+                hcpcs_code: hcpcs,
+                exclude_competitors: excludeCompetitors,
+                parent_company: parentCompany
+            });
+
+            window.location.href = `/api/supplier/export?${params}`;
+        }
+
         // Initialize
         loadStates();
         loadYears();
@@ -1360,7 +1990,18 @@
                 <button class="modal-close" onclick="closeModal('refreshModal')">&times;</button>
             </div>
             <div class="modal-body">
-                <p class="info-text">Select years to download/refresh data from CMS. This will fetch the latest data for the selected years.</p>
+                <h4 style="margin-bottom:10px">Data Type:</h4>
+                <div class="checkbox-group" style="margin-bottom:15px">
+                    <label class="checkbox-item" style="flex:1; justify-content:center; border:2px solid #4299e1; background:#ebf8ff">
+                        <input type="radio" name="refreshDataType" value="provider" checked onchange="onRefreshTypeChange(this.value)">
+                        <span style="font-weight:600">Providers</span>
+                    </label>
+                    <label class="checkbox-item" style="flex:1; justify-content:center; border:2px solid #e2e8f0">
+                        <input type="radio" name="refreshDataType" value="supplier" onchange="onRefreshTypeChange(this.value)">
+                        <span style="font-weight:600">Suppliers</span>
+                    </label>
+                </div>
+                <p class="info-text">Select years to download/refresh data from CMS.</p>
                 <h4 style="margin-top:15px; margin-bottom:10px">Select Years:</h4>
                 <div id="refreshVersionsList"></div>
                 <h4 style="margin-top:15px; margin-bottom:10px">Select HCPCS Codes:</h4>
@@ -1377,9 +2018,9 @@
                 <h4 style="margin-top:15px; margin-bottom:10px">Options:</h4>
                 <label class="checkbox-item" style="background:#ebf8ff; border:1px solid #90cdf4">
                     <input type="checkbox" id="refreshEnrich" checked>
-                    <span>Run enrichment for refreshed providers</span>
+                    <span id="refreshEnrichLabel">Run enrichment for refreshed providers</span>
                 </label>
-                <p class="info-text" style="margin-top:8px; font-size:0.85rem">Enrichment fetches clinic info and patient focus from NPI Registry (1 provider/sec rate limit).</p>
+                <p class="info-text" style="margin-top:8px; font-size:0.85rem">Enrichment fetches additional info from NPI Registry (1 record/sec rate limit).</p>
                 <div id="refreshJobStatus"></div>
             </div>
             <div class="modal-footer">
@@ -1422,5 +2063,235 @@
             </div>
         </div>
     </div>
+
+    <!-- Edit Parent Company Modal -->
+    <div class="modal-overlay" id="editParentModal" onclick="if(event.target===this) closeModal('editParentModal')">
+        <div class="modal" style="max-width: 500px;">
+            <div class="modal-header">
+                <h2>Change Parent Company</h2>
+                <button class="modal-close" onclick="closeModal('editParentModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p style="margin-bottom: 15px;">
+                    Supplier NPI: <strong id="editParentNpi"></strong><br>
+                    Current Parent: <strong id="editParentCurrent"></strong>
+                </p>
+                <input type="text" class="parent-search-input" id="parentSearchInput"
+                       placeholder="Search for parent company..."
+                       oninput="searchParentCompanies(this.value)">
+                <div class="parent-search-results" id="parentSearchResults">
+                    <div style="padding: 20px; text-align: center; color: #666;">
+                        Type to search for a parent company
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('editParentModal')">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Manage Parent Companies Modal -->
+    <div class="modal-overlay" id="manageParentsModal" onclick="if(event.target===this) closeModal('manageParentsModal')">
+        <div class="modal" style="max-width: 700px;">
+            <div class="modal-header">
+                <h2>Manage Parent Companies</h2>
+                <button class="modal-close" onclick="closeModal('manageParentsModal')">&times;</button>
+            </div>
+            <div class="modal-body" style="max-height: 500px; overflow-y: auto;">
+                <p class="info-text" style="margin-bottom: 15px;">
+                    Review and merge duplicate parent companies. Companies are grouped by their first word.
+                    Select the target parent (the one to keep) and click Merge.
+                </p>
+                <div id="duplicateParentsList">
+                    <div style="text-align: center; padding: 20px; color: #666;">Loading...</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="loadDuplicateParents()">Refresh</button>
+                <button class="btn" onclick="closeModal('manageParentsModal')">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Edit Parent Company Functions
+        let currentEditNpi = null;
+
+        function openEditParentModal(npi, currentParent, currentParentId) {
+            currentEditNpi = npi;
+            document.getElementById('editParentNpi').textContent = npi;
+            document.getElementById('editParentCurrent').textContent = currentParent;
+            document.getElementById('parentSearchInput').value = '';
+            document.getElementById('parentSearchResults').innerHTML = `
+                <div style="padding: 20px; text-align: center; color: #666;">
+                    Type to search for a parent company
+                </div>
+            `;
+            document.getElementById('editParentModal').classList.add('show');
+            document.getElementById('parentSearchInput').focus();
+        }
+
+        async function searchParentCompanies(query) {
+            if (query.length < 2) {
+                document.getElementById('parentSearchResults').innerHTML = `
+                    <div style="padding: 20px; text-align: center; color: #666;">
+                        Type at least 2 characters to search
+                    </div>
+                `;
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/supplier/parent-companies/search?q=${encodeURIComponent(query)}`);
+                const results = await response.json();
+
+                if (results.length === 0) {
+                    document.getElementById('parentSearchResults').innerHTML = `
+                        <div style="padding: 20px; text-align: center; color: #666;">
+                            No parent companies found matching "${query}"
+                        </div>
+                    `;
+                    return;
+                }
+
+                let html = '';
+                results.forEach(r => {
+                    html += `
+                        <div class="parent-search-item" onclick="selectParentCompany(${r.id}, '${r.name.replace(/'/g, "\\'")}')">
+                            <span class="name">${r.name}</span>
+                            <span class="count">${r.supplier_count} suppliers</span>
+                        </div>
+                    `;
+                });
+                document.getElementById('parentSearchResults').innerHTML = html;
+            } catch (error) {
+                console.error('Search error:', error);
+            }
+        }
+
+        async function selectParentCompany(parentId, parentName) {
+            if (!currentEditNpi) return;
+
+            try {
+                const response = await fetch('/api/supplier/parent-companies', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        npi: currentEditNpi,
+                        parent_company_id: parentId
+                    })
+                });
+
+                if (response.ok) {
+                    closeModal('editParentModal');
+                    // Refresh the supplier list
+                    loadSupplierData();
+                    alert(`Successfully assigned supplier ${currentEditNpi} to ${parentName}`);
+                } else {
+                    const error = await response.json();
+                    alert('Error: ' + (error.error || 'Failed to update'));
+                }
+            } catch (error) {
+                console.error('Update error:', error);
+                alert('Error updating parent company');
+            }
+        }
+
+        // Manage Parent Companies Functions
+        function openManageParentsModal() {
+            document.getElementById('manageParentsModal').classList.add('show');
+            document.getElementById('adminDropdown').classList.remove('show');
+            loadDuplicateParents();
+        }
+
+        async function loadDuplicateParents() {
+            try {
+                const response = await fetch('/api/supplier/parent-companies/duplicates');
+                const groups = await response.json();
+
+                if (groups.length === 0) {
+                    document.getElementById('duplicateParentsList').innerHTML = `
+                        <div style="text-align: center; padding: 20px; color: #666;">
+                            No potential duplicate parent companies found
+                        </div>
+                    `;
+                    return;
+                }
+
+                let html = '';
+                groups.forEach((group, groupIndex) => {
+                    const companies = group.companies;
+                    if (companies.length < 2) return;
+
+                    html += `<div class="duplicate-group" data-group="${groupIndex}">`;
+                    html += `<h4>Group: "${group.first_word}" (${companies.length} companies)</h4>`;
+
+                    companies.forEach((c, idx) => {
+                        html += `
+                            <div class="duplicate-item">
+                                <label>
+                                    <input type="radio" name="target_${groupIndex}" value="${c.id}" ${idx === 0 ? 'checked' : ''}>
+                                    <strong>${c.name}</strong>
+                                    ${c.ticker ? `<span class="badge badge-adult">${c.ticker}</span>` : ''}
+                                </label>
+                                <span class="count">${c.supplier_count} suppliers, ${(c.total_claims || 0).toLocaleString()} claims</span>
+                            </div>
+                        `;
+                    });
+
+                    html += `<button class="merge-btn" onclick="mergeGroup(${groupIndex}, ${JSON.stringify(companies.map(c => c.id))})">Merge Selected</button>`;
+                    html += `</div>`;
+                });
+
+                document.getElementById('duplicateParentsList').innerHTML = html;
+            } catch (error) {
+                console.error('Load duplicates error:', error);
+                document.getElementById('duplicateParentsList').innerHTML = `
+                    <div style="text-align: center; padding: 20px; color: red;">
+                        Error loading duplicate parents
+                    </div>
+                `;
+            }
+        }
+
+        async function mergeGroup(groupIndex, allIds) {
+            const targetId = document.querySelector(`input[name="target_${groupIndex}"]:checked`).value;
+            const sourceIds = allIds.filter(id => id != targetId);
+
+            if (sourceIds.length === 0) {
+                alert('No companies to merge');
+                return;
+            }
+
+            if (!confirm(`Merge ${sourceIds.length} companies into the selected target? This cannot be undone.`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/supplier/parent-companies/merge', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        target_id: parseInt(targetId),
+                        source_ids: sourceIds
+                    })
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    alert(`Successfully merged! ${result.suppliers_updated} suppliers moved to "${result.target_name}"`);
+                    loadDuplicateParents();
+                    loadParentCompanies(); // Refresh the parent companies dropdown
+                } else {
+                    alert('Error: ' + (result.error || 'Failed to merge'));
+                }
+            } catch (error) {
+                console.error('Merge error:', error);
+                alert('Error merging parent companies');
+            }
+        }
+    </script>
 </body>
 </html>

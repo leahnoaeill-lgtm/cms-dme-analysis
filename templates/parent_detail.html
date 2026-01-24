@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ parent.name }} - Parent Company Details</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+        }
+        .header {
+            background: linear-gradient(135deg, #1a237e 0%, #283593 100%);
+            color: white;
+            padding: 20px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .header h1 { font-size: 1.5rem; font-weight: 600; }
+        .header a { color: white; text-decoration: none; opacity: 0.8; }
+        .header a:hover { opacity: 1; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+
+        .parent-header {
+            background: white;
+            border-radius: 8px;
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .parent-header h2 {
+            font-size: 1.8rem;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .ticker-badge {
+            background: #4CAF50;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+        .parent-meta {
+            color: #666;
+            font-size: 0.95rem;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .stat-card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .stat-card h3 {
+            font-size: 0.85rem;
+            color: #666;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+        .stat-card .value {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: #1a237e;
+        }
+        .stat-card.highlight { border-left: 4px solid #4CAF50; }
+
+        .section {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .section h3 {
+            font-size: 1.1rem;
+            margin-bottom: 16px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .states-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .state-badge {
+            background: #e3f2fd;
+            color: #1565c0;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        th {
+            background: #f8f9fa;
+            font-weight: 600;
+            color: #555;
+            position: sticky;
+            top: 0;
+        }
+        tr:hover { background: #f8f9fa; }
+
+        .npi-link {
+            font-family: monospace;
+            color: #1565c0;
+        }
+        .address {
+            color: #666;
+            font-size: 0.85rem;
+        }
+        .ruca-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            background: #fff3e0;
+            color: #e65100;
+        }
+        .ruca-badge.urban { background: #e8f5e9; color: #2e7d32; }
+
+        .export-btn {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .export-btn:hover { background: #43a047; }
+
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            color: #1565c0;
+            text-decoration: none;
+            margin-bottom: 16px;
+        }
+        .back-link:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>CMS DME Supplier Analysis</h1>
+        <a href="/">← Back to Dashboard</a>
+    </div>
+
+    <div class="container">
+        <a href="/" class="back-link">← Back to Dashboard</a>
+
+        <div class="parent-header">
+            <h2>
+                {{ parent.name }}
+                {% if parent.ticker %}
+                <span class="ticker-badge">{{ parent.ticker }}</span>
+                {% endif %}
+            </h2>
+            <p class="parent-meta">
+                {% if parent.headquarters_state %}HQ: {{ parent.headquarters_state }} | {% endif %}
+                {% if parent.website %}<a href="https://{{ parent.website }}" target="_blank">{{ parent.website }}</a> | {% endif %}
+                {{ stats.supplier_count }} locations across {{ stats.state_count }} states
+            </p>
+            {% if parent.notes %}
+            <p class="parent-meta" style="margin-top: 8px; font-style: italic;">{{ parent.notes }}</p>
+            {% endif %}
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-card highlight">
+                <h3>Locations</h3>
+                <div class="value">{{ "{:,}".format(stats.supplier_count) }}</div>
+            </div>
+            <div class="stat-card">
+                <h3>Total Claims</h3>
+                <div class="value">{{ "{:,}".format(stats.total_claims|int) }}</div>
+            </div>
+            <div class="stat-card">
+                <h3>Beneficiaries</h3>
+                <div class="value">{{ "{:,}".format(stats.total_beneficiaries|int) }}</div>
+            </div>
+            <div class="stat-card">
+                <h3>Total Services</h3>
+                <div class="value">{{ "{:,}".format(stats.total_services|int) }}</div>
+            </div>
+            <div class="stat-card">
+                <h3>Avg Payment</h3>
+                <div class="value">${{ "%.2f"|format(stats.avg_payment|float) }}</div>
+            </div>
+            <div class="stat-card">
+                <h3>States</h3>
+                <div class="value">{{ stats.state_count }}</div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h3>Geographic Coverage</h3>
+            <div class="states-grid">
+                {% for state in states %}
+                <span class="state-badge">{{ state.state }}: {{ state.count }} ({{ "{:,}".format(state.claims|int) }} claims)</span>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="section">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                <h3 style="border: none; margin: 0; padding: 0;">Supplier Locations ({{ suppliers|length }})</h3>
+                <button class="export-btn" onclick="exportToCSV()">
+                    ⬇ Export CSV
+                </button>
+            </div>
+
+            <div style="overflow-x: auto;">
+                <table id="suppliersTable">
+                    <thead>
+                        <tr>
+                            <th>NPI</th>
+                            <th>Name</th>
+                            <th>Address</th>
+                            <th>City</th>
+                            <th>State</th>
+                            <th>ZIP</th>
+                            <th>Area Type</th>
+                            <th>Specialty</th>
+                            <th>Claims</th>
+                            <th>Beneficiaries</th>
+                            <th>Avg Payment</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for s in suppliers %}
+                        <tr>
+                            <td><span class="npi-link">{{ s.npi }}</span></td>
+                            <td>
+                                {% if s.entity_code == 'O' %}
+                                    {{ s.last_name }}
+                                {% else %}
+                                    {{ s.first_name }} {{ s.last_name }}{% if s.credentials %}, {{ s.credentials }}{% endif %}
+                                {% endif %}
+                            </td>
+                            <td class="address">{{ s.street1 }}{% if s.street2 %}, {{ s.street2 }}{% endif %}</td>
+                            <td>{{ s.city }}</td>
+                            <td>{{ s.state }}</td>
+                            <td>{{ s.zip }}</td>
+                            <td>
+                                {% if s.ruca_desc %}
+                                <span class="ruca-badge {% if 'urban' in s.ruca_desc|lower or 'metro' in s.ruca_desc|lower %}urban{% endif %}">
+                                    {{ s.ruca_desc[:20] }}{% if s.ruca_desc|length > 20 %}...{% endif %}
+                                </span>
+                                {% endif %}
+                            </td>
+                            <td title="{{ s.specialty_desc }}">{{ s.specialty_desc[:25] if s.specialty_desc else '' }}{% if s.specialty_desc and s.specialty_desc|length > 25 %}...{% endif %}</td>
+                            <td>{{ "{:,}".format(s.total_claims|int) }}</td>
+                            <td>{{ "{:,}".format(s.total_beneficiaries|int) }}</td>
+                            <td>${{ "%.2f"|format(s.avg_payment|float) }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function exportToCSV() {
+            const table = document.getElementById('suppliersTable');
+            let csv = [];
+
+            // Headers
+            const headers = [];
+            table.querySelectorAll('thead th').forEach(th => headers.push('"' + th.textContent + '"'));
+            csv.push(headers.join(','));
+
+            // Rows
+            table.querySelectorAll('tbody tr').forEach(tr => {
+                const row = [];
+                tr.querySelectorAll('td').forEach(td => {
+                    let text = td.textContent.trim().replace(/"/g, '""');
+                    row.push('"' + text + '"');
+                });
+                csv.push(row.join(','));
+            });
+
+            // Download
+            const blob = new Blob([csv.join('\n')], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = '{{ parent.name|replace(" ", "_")|replace(",", "") }}_suppliers.csv';
+            a.click();
+            window.URL.revokeObjectURL(url);
+        }
+    </script>
+</body>
+</html>
