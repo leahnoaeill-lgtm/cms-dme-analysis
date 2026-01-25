@@ -734,6 +734,80 @@ def update_supplier_parent():
     conn.close()
     return jsonify(result)
 
+@app.route('/api/supplier/parent-companies/<int:parent_id>', methods=['GET'])
+def get_parent_company(parent_id):
+    """Get a single parent company by ID."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, name, ticker, headquarters_state, website, notes
+        FROM parent_companies
+        WHERE id = %s
+    """, (parent_id,))
+    result = cur.fetchone()
+    cur.close()
+    conn.close()
+
+    if not result:
+        return jsonify({'error': 'Parent company not found'}), 404
+
+    return jsonify(dict(result))
+
+@app.route('/api/supplier/parent-companies/<int:parent_id>', methods=['PUT'])
+def update_parent_company(parent_id):
+    """Update a parent company's details."""
+    data = request.get_json()
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    # Check if parent exists
+    cur.execute("SELECT id FROM parent_companies WHERE id = %s", (parent_id,))
+    if not cur.fetchone():
+        cur.close()
+        conn.close()
+        return jsonify({'error': 'Parent company not found'}), 404
+
+    # Update fields that are provided
+    updates = []
+    params = []
+
+    if 'name' in data and data['name']:
+        updates.append("name = %s")
+        params.append(data['name'])
+    if 'ticker' in data:
+        updates.append("ticker = %s")
+        params.append(data['ticker'] if data['ticker'] else None)
+    if 'headquarters_state' in data:
+        updates.append("headquarters_state = %s")
+        params.append(data['headquarters_state'] if data['headquarters_state'] else None)
+    if 'website' in data:
+        updates.append("website = %s")
+        params.append(data['website'] if data['website'] else None)
+    if 'notes' in data:
+        updates.append("notes = %s")
+        params.append(data['notes'] if data['notes'] else None)
+
+    if not updates:
+        cur.close()
+        conn.close()
+        return jsonify({'error': 'No fields to update'}), 400
+
+    params.append(parent_id)
+    cur.execute(f"""
+        UPDATE parent_companies
+        SET {', '.join(updates)}
+        WHERE id = %s
+        RETURNING id, name, ticker, headquarters_state, website, notes
+    """, params)
+
+    result = dict(cur.fetchone())
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    return jsonify(result)
+
 @app.route('/api/supplier/parent-companies/merge', methods=['POST'])
 def merge_parent_companies():
     """Merge multiple parent companies into one target parent company."""
