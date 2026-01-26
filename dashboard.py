@@ -254,8 +254,19 @@ def get_aggregates():
             """)
         aggregates['top_states'] = [dict(row) for row in cur.fetchall()]
 
-    # These don't change by year
-    cur.execute("SELECT COUNT(*) as count FROM clinics")
+    # Clinics count — filter by providers active in selected year/HCPCS
+    if year and year != 'all':
+        cur.execute(f"""
+            SELECT COUNT(*) as count FROM clinics
+            WHERE npi IN (SELECT DISTINCT npi FROM provider_yearly_data WHERE data_year = %s{hcpcs_filter})
+        """, [year] + hcpcs_params)
+    elif hcpcs_code and hcpcs_code != 'all':
+        cur.execute("""
+            SELECT COUNT(*) as count FROM clinics
+            WHERE npi IN (SELECT DISTINCT npi FROM provider_yearly_data WHERE hcpcs_code = %s)
+        """, [hcpcs_code])
+    else:
+        cur.execute("SELECT COUNT(*) as count FROM clinics")
     aggregates['total_clinics'] = cur.fetchone()['count']
 
     cur.execute("""
@@ -469,6 +480,49 @@ def get_states():
     cur.close()
     conn.close()
     return jsonify(states)
+
+@app.route('/api/provider/<npi>/patient-focus', methods=['PUT'])
+def update_patient_focus(npi):
+    """Update a provider's patient focus."""
+    data = request.get_json()
+    patient_focus = data.get('patient_focus')
+
+    valid_values = ['Adult', 'Pediatric', 'Both', 'Unknown', None]
+    if patient_focus not in valid_values:
+        return jsonify({'error': f'Invalid patient_focus. Must be one of: {valid_values}'}), 400
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    try:
+        cur.execute("""
+            UPDATE provider_enrichment
+            SET patient_focus = %s, updated_at = CURRENT_TIMESTAMP
+            WHERE npi = %s
+            RETURNING npi, patient_focus
+        """, (patient_focus, npi))
+
+        result = cur.fetchone()
+        if not result:
+            # Row may not exist yet — insert it
+            cur.execute("""
+                INSERT INTO provider_enrichment (npi, patient_focus, search_status)
+                VALUES (%s, %s, 'manual')
+                ON CONFLICT (npi) DO UPDATE SET
+                    patient_focus = EXCLUDED.patient_focus,
+                    updated_at = CURRENT_TIMESTAMP
+                RETURNING npi, patient_focus
+            """, (npi, patient_focus))
+            result = cur.fetchone()
+
+        conn.commit()
+        return jsonify(dict(result))
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
 
 @app.route('/provider/<npi>')
 def provider_detail(npi):
@@ -994,6 +1048,23 @@ def get_suppliers():
     parent_company = request.args.get('parent_company', '').strip()
     page = int(request.args.get('page', 1))
     per_page = int(request.args.get('per_page', 50))
+    sort_by = request.args.get('sort_by', 'total_claims').strip()
+    sort_dir = request.args.get('sort_dir', 'desc').strip().lower()
+
+    # Whitelist allowed sort columns and directions
+    allowed_sort_columns = {
+        'npi': 's.npi',
+        'name': 's.last_name',
+        'parent_company_name': 'pc.name',
+        'total_claims': 'total_claims',
+        'total_beneficiaries': 'total_beneficiaries',
+        'state': 's.state',
+    }
+    if sort_dir not in ('asc', 'desc'):
+        sort_dir = 'desc'
+    sort_column_sql = allowed_sort_columns.get(sort_by, 'total_claims')
+    nulls = 'NULLS LAST' if sort_dir == 'desc' else 'NULLS FIRST'
+    order_sql = f"{sort_column_sql} {sort_dir.upper()} {nulls}, s.npi"
 
     # Build query
     where_clauses = []
@@ -1067,7 +1138,7 @@ def get_suppliers():
             LEFT JOIN parent_companies pc ON spm.parent_company_id = pc.id
             JOIN supplier_yearly_data y ON s.npi = y.npi
             WHERE {where_sql}
-            ORDER BY y.total_claims DESC NULLS LAST, s.npi
+            ORDER BY {order_sql}
             LIMIT %s OFFSET %s
         """
         cur.execute(data_sql, params + [per_page, offset])
@@ -1107,7 +1178,7 @@ def get_suppliers():
             GROUP BY s.npi, s.first_name, s.last_name, s.credentials,
                      s.city, s.state, s.specialty_desc, s.entity_code,
                      pc.id, pc.name
-            ORDER BY total_claims DESC NULLS LAST, s.npi
+            ORDER BY {order_sql}
             LIMIT %s OFFSET %s
         """
         cur.execute(data_sql, params + [per_page, offset])

@@ -244,6 +244,26 @@
         .badge-both { background: #e9d8fd; color: #553c9a; }
         .badge-unknown { background: #e2e8f0; color: #4a5568; }
         .badge-pending { background: #bee3f8; color: #2a4365; }
+        .focus-select {
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 3px 8px;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            appearance: none;
+            -webkit-appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 8 8'%3E%3Cpath fill='%23666' d='M0 2l4 4 4-4z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 6px center;
+            padding-right: 18px;
+        }
+        .focus-select:hover { border-color: #a0aec0; }
+        .focus-adult { background: #c6f6d5; color: #22543d; }
+        .focus-pediatric { background: #feebc8; color: #744210; }
+        .focus-both { background: #e9d8fd; color: #553c9a; }
+        .focus-unknown { background: #e2e8f0; color: #4a5568; }
+        .focus-pending { background: #bee3f8; color: #2a4365; }
 
         .parent-cell {
             display: flex;
@@ -1321,7 +1341,15 @@
                         <td><a href="/provider/${p.npi}" class="npi-link">${p.npi}</a></td>
                         <td>${p.first_name || ''} ${p.last_name || ''}${p.credentials ? ', ' + p.credentials : ''}</td>
                         <td title="${p.specialty_desc || ''}">${specialty}</td>
-                        <td><span class="badge badge-${focusClass}">${p.patient_focus || 'Pending'}</span></td>
+                        <td>
+                            <select class="focus-select focus-${focusClass}" onchange="updatePatientFocus('${p.npi}', this)" data-npi="${p.npi}">
+                                <option value="" ${!p.patient_focus || p.patient_focus === 'Pending' ? 'selected' : ''}>Pending</option>
+                                <option value="Adult" ${p.patient_focus === 'Adult' ? 'selected' : ''}>Adult</option>
+                                <option value="Pediatric" ${p.patient_focus === 'Pediatric' ? 'selected' : ''}>Pediatric</option>
+                                <option value="Both" ${p.patient_focus === 'Both' ? 'selected' : ''}>Both</option>
+                                <option value="Unknown" ${p.patient_focus === 'Unknown' ? 'selected' : ''}>Unknown</option>
+                            </select>
+                        </td>
                         <td>${(p.total_claims || 0).toLocaleString()}</td>
                         <td>${(p.total_beneficiaries || 0).toLocaleString()}</td>
                         <td>${p.cms_city || ''}, ${p.cms_state || ''}</td>
@@ -1365,6 +1393,31 @@
             html += `<button ${data.page >= data.total_pages ? 'disabled' : ''} onclick="searchProviders(${data.page + 1})">Next</button>`;
 
             container.innerHTML = html;
+        }
+
+        // Update patient focus
+        async function updatePatientFocus(npi, selectEl) {
+            const value = selectEl.value || null;
+            try {
+                const response = await fetch(`/api/provider/${npi}/patient-focus`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ patient_focus: value })
+                });
+                if (response.ok) {
+                    // Update dropdown styling
+                    const focusMap = { 'Adult': 'adult', 'Pediatric': 'pediatric', 'Both': 'both', 'Unknown': 'unknown', '': 'pending' };
+                    selectEl.className = 'focus-select focus-' + (focusMap[value] || 'pending');
+                } else {
+                    const err = await response.json();
+                    alert('Error: ' + (err.error || 'Failed to update'));
+                    // Revert selection — reload to get correct value
+                    searchProviders();
+                }
+            } catch (error) {
+                console.error('Update error:', error);
+                alert('Error updating patient focus');
+            }
         }
 
         // Reset search
@@ -1583,7 +1636,9 @@
                     exclude_competitors: excludeCompetitors,
                     parent_company: parentCompany,
                     page: supplierCurrentPage,
-                    per_page: 50
+                    per_page: 50,
+                    sort_by: supplierSortColumn,
+                    sort_dir: supplierSortDirection
                 });
                 const response = await fetch(`/api/suppliers?${params}`);
                 const data = await response.json();
@@ -1592,7 +1647,7 @@
             }
         }
 
-        function renderSupplierTable(data, skipSort = false) {
+        function renderSupplierTable(data) {
             supplierCurrentData = data.suppliers;
             document.getElementById('supplierResultCount').textContent =
                 `Showing ${data.suppliers.length} of ${data.total} suppliers`;
@@ -1606,11 +1661,8 @@
                 return;
             }
 
-            // Sort data if not skipping
-            let sortedData = [...data.suppliers];
-            if (!skipSort) {
-                sortedData = sortSupplierData(sortedData, supplierSortColumn, supplierSortDirection);
-            }
+            // Data is already sorted by the server
+            let sortedData = data.suppliers;
 
             const getSortClass = (col) => {
                 if (col === supplierSortColumn) return supplierSortDirection;
@@ -1686,7 +1738,7 @@
                 supplierSortColumn = column;
                 supplierSortDirection = column === 'total_claims' || column === 'total_beneficiaries' ? 'desc' : 'asc';
             }
-            renderSupplierTable({ suppliers: supplierCurrentData, total: supplierCurrentData.length });
+            searchSuppliers(1);
         }
 
         function renderGroupedSupplierTable(data) {
