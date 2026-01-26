@@ -320,6 +320,24 @@ def get_providers():
     hcpcs_code = request.args.get('hcpcs_code', '').strip()
     page = int(request.args.get('page', 1))
     per_page = int(request.args.get('per_page', 50))
+    sort_by = request.args.get('sort_by', 'total_claims').strip()
+    sort_dir = request.args.get('sort_dir', 'desc').strip().lower()
+
+    # Whitelist allowed sort columns and directions
+    provider_sort_columns = {
+        'npi': 'p.npi',
+        'last_name': 'p.last_name',
+        'specialty_desc': 'p.specialty_desc',
+        'patient_focus': 'patient_focus',
+        'total_claims': 'total_claims',
+        'total_beneficiaries': 'total_beneficiaries',
+        'cms_state': 'p.cms_state',
+    }
+    if sort_dir not in ('asc', 'desc'):
+        sort_dir = 'desc'
+    p_sort_col = provider_sort_columns.get(sort_by, 'total_claims')
+    p_nulls = 'NULLS LAST' if sort_dir == 'desc' else 'NULLS FIRST'
+    p_order_sql = f"{p_sort_col} {sort_dir.upper()} {p_nulls}, p.npi"
 
     # Build query
     where_clauses = []
@@ -388,7 +406,7 @@ def get_providers():
             JOIN provider_yearly_data y ON p.npi = y.npi
             LEFT JOIN provider_enrichment e ON p.npi = e.npi
             WHERE {where_sql}
-            ORDER BY y.total_claims DESC NULLS LAST, p.npi
+            ORDER BY {p_order_sql}
             LIMIT %s OFFSET %s
         """
         cur.execute(data_sql, params + [per_page, offset])
@@ -428,7 +446,7 @@ def get_providers():
             GROUP BY p.npi, p.first_name, p.last_name, p.credentials,
                      p.cms_city, p.cms_state, p.specialty_desc,
                      e.patient_focus, e.search_status
-            ORDER BY total_claims DESC NULLS LAST, p.npi
+            ORDER BY {p_order_sql}
             LIMIT %s OFFSET %s
         """
         cur.execute(data_sql, params + [per_page, offset])
