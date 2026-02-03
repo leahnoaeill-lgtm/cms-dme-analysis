@@ -134,8 +134,90 @@ Uses free OpenStreetMap APIs:
 2. **Overpass** - Finds nearby healthcare facilities
 3. **Fallback** - Uses provider name if no facility found
 
+## Docker Deployment (AWS)
+
+### Quick Start with Docker
+```bash
+# 1. Copy environment file and set password
+cp .env.example .env
+# Edit .env and set POSTGRES_PASSWORD
+
+# 2. Build and start containers
+docker-compose up -d
+
+# 3. Check status
+docker-compose ps
+docker-compose logs -f dashboard
+```
+
+Dashboard: **http://localhost:5001**
+
+### Export Data from Local Mac
+```bash
+# Export current database
+./scripts/export_data.sh
+
+# This creates: data_export/cms_analysis_YYYYMMDD_HHMMSS.sql.gz
+```
+
+### Import Data to AWS
+```bash
+# Copy export file to AWS server, then:
+./scripts/import_data.sh data_export/cms_analysis_*.sql.gz
+```
+
+### AWS EC2 Setup
+```bash
+# Install Docker on Amazon Linux 2
+sudo yum update -y
+sudo yum install -y docker
+sudo service docker start
+sudo usermod -a -G docker ec2-user
+
+# Install Docker Compose
+sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+sudo chmod +x /usr/local/bin/docker-compose
+
+# Clone repo and start
+git clone https://github.com/leahnoaeill-lgtm/cms-dme-analysis.git
+cd cms-dme-analysis
+git checkout CMS_Dashboard_Heatmap
+cp .env.example .env
+# Edit .env with secure password
+docker-compose up -d
+```
+
+### Docker Commands
+```bash
+# View logs
+docker-compose logs -f
+
+# Restart services
+docker-compose restart
+
+# Stop services
+docker-compose down
+
+# Stop and remove data
+docker-compose down -v
+
+# Rebuild after code changes
+docker-compose build --no-cache
+docker-compose up -d
+```
+
+### Environment Variables
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `POSTGRES_PASSWORD` | postgres123 | Database password |
+| `DB_HOST` | db | Database host (container name) |
+| `DB_PORT` | 5432 | Database port |
+| `DB_NAME` | cms_analysis | Database name |
+| `DB_USER` | postgres | Database user |
+
 ## Notes
 
 - Dashboard uses port 5001 (port 5000 reserved by macOS AirPlay)
 - NPI Registry: 1 req/sec rate limit
 - OpenStreetMap: Free, no API key, 1 req/sec rate limit
+- Docker uses gunicorn with 4 workers for production

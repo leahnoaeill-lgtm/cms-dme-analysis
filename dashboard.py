@@ -15,6 +15,7 @@ import json
 import time
 import threading
 from datetime import datetime
+import os
 import folium
 from folium.plugins import HeatMap, MarkerCluster
 
@@ -23,11 +24,13 @@ app = Flask(__name__)
 # Background job tracking
 active_jobs = {}
 
+# Database configuration - reads from environment variables for Docker
 DB_CONFIG = {
-    "dbname": "cms_analysis",
-    "user": "postgres",
-    "host": "localhost",
-    "port": 5432
+    "dbname": os.environ.get("DB_NAME", "cms_analysis"),
+    "user": os.environ.get("DB_USER", "postgres"),
+    "password": os.environ.get("DB_PASSWORD", ""),
+    "host": os.environ.get("DB_HOST", "localhost"),
+    "port": int(os.environ.get("DB_PORT", 5432))
 }
 
 # HCPCS code descriptions
