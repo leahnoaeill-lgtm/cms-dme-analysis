@@ -15,11 +15,13 @@ Analysis tool for CMS Medicare DME data (HCPCS code E0483 - High Frequency Chest
 MyClaude/
 ├── dashboard.py              # Flask web app (port 5001)
 ├── templates/dashboard.html  # Main dashboard with search, filters, charts
+├── templates/provider_map.html # Heatmap/marker map view
 ├── schema.sql                # PostgreSQL schema
 ├── load_data.py              # Initial data loader
 ├── download_all_years.py     # Multi-year downloader (2014-2022)
 ├── enrich_npi.py             # NPI enrichment (clinic info, patient focus)
 ├── enrich_clinic_names.py    # Clinic name lookup via OpenStreetMap
+├── enrich_conditions.py      # Condition specialty enrichment via web search
 └── cms_e0483_*.json          # Downloaded data files
 ```
 
@@ -29,6 +31,8 @@ MyClaude/
 - `provider_yearly_data` - Yearly billing data (claims, beneficiaries, services, payments)
 - `provider_enrichment` - Enrichment status, patient focus (Adult/Pediatric/Both)
 - `clinics` - Clinic locations per provider
+- `condition_types` - Condition specialties (ALS, MD, SCI, SMA, Bronchiectasis, COPD, CF, Other)
+- `provider_conditions` - Many-to-many: provider conditions treated
 
 ## Quick Start
 
@@ -54,26 +58,40 @@ python3 enrich_clinic_names.py --stats           # Check status
 python3 enrich_clinic_names.py > clinic_names_log.txt 2>&1 &
 ```
 
+### 5. Enrich Provider Conditions
+```bash
+python3 enrich_conditions.py --stats             # Check status
+python3 enrich_conditions.py --limit 10          # Test on 10 providers
+python3 enrich_conditions.py > conditions_log.txt 2>&1 &
+```
+Conditions: ALS, Muscular Dystrophy, Spinal Cord Injury, SMA, Bronchiectasis, COPD, Cystic Fibrosis, Other
+
 ## API Endpoints
 
 | Endpoint | Description |
 |----------|-------------|
 | `GET /` | Main dashboard |
-| `GET /api/providers` | Search (params: npi, name, state, patient_focus, year, page) |
+| `GET /map` | Provider heatmap/marker map |
+| `GET /api/providers` | Search (params: npi, name, state, patient_focus, condition, year, page) |
 | `GET /api/states` | Available states |
 | `GET /api/years` | Available years |
+| `GET /api/conditions` | Available condition types |
 | `GET /api/aggregates?year=` | Aggregate stats by year |
 | `GET /api/export` | Export to Excel (.xlsx) |
 | `GET /provider/<npi>` | Provider detail |
+| `GET /api/provider/<npi>/conditions` | Get provider's conditions |
+| `PUT /api/provider/<npi>/conditions` | Update provider's conditions |
 
 ## Dashboard Features
 
 - **Year Filter**: Top filter for viewing data by year
 - **Aggregates**: Providers, Clinics, Claims, Beneficiaries, Avg Claims
-- **Table**: Sortable columns (NPI, Name, Specialty, Focus, Claims, Beneficiaries, Location)
-- **Search**: NPI, Name, State, Patient Focus filters
-- **Export**: Download as Excel with clinic info
+- **Table**: Sortable columns (NPI, Name, Specialty, Focus, Conditions, Claims, Beneficiaries, Location)
+- **Search**: NPI, Name, State, Patient Focus, Condition filters
+- **Editable Fields**: Patient Focus and Conditions can be updated inline
+- **Export**: Download as Excel with clinic info and conditions
 - **Charts**: Patient Focus, Top States, Top Specialties
+- **Map View**: Heatmap or markers with filters (State, Focus, Beneficiaries, Condition)
 
 ## Data Fields (from CMS)
 

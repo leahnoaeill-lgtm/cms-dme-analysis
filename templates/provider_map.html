@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Provider Map - CMS DME Analysis</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f7fa;
+            color: #333;
+        }
+        .header {
+            background: linear-gradient(135deg, #1a365d 0%, #2c5282 100%);
+            color: white;
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .header h1 {
+            font-size: 1.4rem;
+            font-weight: 600;
+        }
+        .header a {
+            color: rgba(255,255,255,0.8);
+            text-decoration: none;
+        }
+        .header a:hover { color: white; }
+
+        .controls {
+            background: white;
+            padding: 15px 20px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            align-items: center;
+            border-bottom: 1px solid #e2e8f0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .control-group label {
+            font-size: 0.85rem;
+            color: #666;
+            font-weight: 500;
+        }
+        .control-group select {
+            padding: 8px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            background: white;
+            cursor: pointer;
+        }
+        .control-group select:hover {
+            border-color: #9ca3af;
+        }
+        .view-toggle {
+            display: flex;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            overflow: hidden;
+        }
+        .view-toggle button {
+            padding: 8px 16px;
+            border: none;
+            background: white;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .view-toggle button:hover {
+            background: #f3f4f6;
+        }
+        .view-toggle button.active {
+            background: #2c5282;
+            color: white;
+        }
+        .export-btn {
+            padding: 8px 16px;
+            background: #059669;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .export-btn:hover {
+            background: #047857;
+        }
+
+        .stats-bar {
+            background: #f8fafc;
+            padding: 10px 20px;
+            display: flex;
+            gap: 30px;
+            font-size: 0.85rem;
+            color: #666;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .stat {
+            display: flex;
+            gap: 6px;
+        }
+        .stat-value {
+            font-weight: 600;
+            color: #333;
+        }
+        .progress-bar {
+            width: 150px;
+            height: 8px;
+            background: #e2e8f0;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background: #059669;
+            border-radius: 4px;
+        }
+
+        .map-container {
+            height: calc(100vh - 180px);
+            width: 100%;
+        }
+        .map-container iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+
+        /* Override folium map styles */
+        .folium-map {
+            width: 100% !important;
+            height: 100% !important;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>
+            <a href="/">&larr; Back to Dashboard</a>
+            <h1>Provider Location Map</h1>
+        </div>
+    </div>
+
+    <div class="controls">
+        <div class="control-group">
+            <label>State:</label>
+            <select id="stateFilter" onchange="applyFilters()">
+                <option value="">All States</option>
+                {% for state in available_states %}
+                <option value="{{ state }}" {% if state == current_state %}selected{% endif %}>{{ state }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="control-group">
+            <label>Patient Focus:</label>
+            <select id="focusFilter" onchange="applyFilters()">
+                <option value="">All</option>
+                <option value="Pediatric" {% if current_focus == 'Pediatric' %}selected{% endif %}>Pediatric</option>
+                <option value="Adult" {% if current_focus == 'Adult' %}selected{% endif %}>Adult</option>
+                <option value="Both" {% if current_focus == 'Both' %}selected{% endif %}>Both</option>
+            </select>
+        </div>
+
+        <div class="control-group">
+            <label>Beneficiaries:</label>
+            <select id="beneficiariesFilter" onchange="applyFilters()">
+                <option value="">All</option>
+                <option value="1-50" {% if current_min_beneficiaries == '1' and current_max_beneficiaries == '50' %}selected{% endif %}>1-50</option>
+                <option value="51-100" {% if current_min_beneficiaries == '51' and current_max_beneficiaries == '100' %}selected{% endif %}>51-100</option>
+                <option value="101-500" {% if current_min_beneficiaries == '101' and current_max_beneficiaries == '500' %}selected{% endif %}>101-500</option>
+                <option value="501+" {% if current_min_beneficiaries == '501' and current_max_beneficiaries == '' %}selected{% endif %}>500+</option>
+            </select>
+        </div>
+
+        <div class="control-group">
+            <label>Condition:</label>
+            <select id="conditionFilter" onchange="applyFilters()">
+                <option value="">All Conditions</option>
+                {% for cond in available_conditions %}
+                <option value="{{ cond.code }}" {% if current_condition == cond.code %}selected{% endif %}>{{ cond.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="control-group">
+            <label>View:</label>
+            <div class="view-toggle">
+                <button type="button" onclick="setView('heatmap')" class="{% if current_view == 'heatmap' %}active{% endif %}">Heatmap</button>
+                <button type="button" onclick="setView('markers')" class="{% if current_view == 'markers' %}active{% endif %}">Markers</button>
+            </div>
+        </div>
+
+        <div style="flex: 1;"></div>
+
+        <a href="/api/map/export?state={{ current_state }}&patient_focus={{ current_focus }}&view={{ current_view }}&min_beneficiaries={{ current_min_beneficiaries }}&max_beneficiaries={{ current_max_beneficiaries }}&condition={{ current_condition }}" class="export-btn">
+            Export Map HTML
+        </a>
+    </div>
+
+    <div class="stats-bar">
+        <div class="stat">
+            <span>Showing:</span>
+            <span class="stat-value">{{ providers|length }} providers</span>
+        </div>
+        <div class="stat">
+            <span>Geocoded:</span>
+            <span class="stat-value">{{ geo_stats.geocoded|int }} / {{ geo_stats.total|int }}</span>
+            <div class="progress-bar">
+                <div class="progress-fill" style="width: {{ (geo_stats.geocoded / geo_stats.total * 100) if geo_stats.total > 0 else 0 }}%;"></div>
+            </div>
+        </div>
+        {% if geo_stats.pending > 0 %}
+        <div class="stat" style="color: #d97706;">
+            <span>Pending geocoding:</span>
+            <span class="stat-value">{{ geo_stats.pending|int }}</span>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="map-container">
+        {{ map_html | safe }}
+    </div>
+
+    <script>
+        function getBeneficiariesRange() {
+            const val = document.getElementById('beneficiariesFilter').value;
+            if (!val) return { min: '', max: '' };
+            if (val === '1-50') return { min: '1', max: '50' };
+            if (val === '51-100') return { min: '51', max: '100' };
+            if (val === '101-500') return { min: '101', max: '500' };
+            if (val === '501+') return { min: '501', max: '' };
+            return { min: '', max: '' };
+        }
+
+        function applyFilters() {
+            const state = document.getElementById('stateFilter').value;
+            const focus = document.getElementById('focusFilter').value;
+            const beneficiaries = getBeneficiariesRange();
+            const condition = document.getElementById('conditionFilter').value;
+            const view = '{{ current_view }}';
+
+            let url = '/map?';
+            const params = [];
+            if (state) params.push('state=' + encodeURIComponent(state));
+            if (focus) params.push('patient_focus=' + encodeURIComponent(focus));
+            if (beneficiaries.min) params.push('min_beneficiaries=' + encodeURIComponent(beneficiaries.min));
+            if (beneficiaries.max) params.push('max_beneficiaries=' + encodeURIComponent(beneficiaries.max));
+            if (condition) params.push('condition=' + encodeURIComponent(condition));
+            params.push('view=' + view);
+
+            window.location.href = url + params.join('&');
+        }
+
+        function setView(view) {
+            const state = document.getElementById('stateFilter').value;
+            const focus = document.getElementById('focusFilter').value;
+            const beneficiaries = getBeneficiariesRange();
+            const condition = document.getElementById('conditionFilter').value;
+
+            let url = '/map?';
+            const params = [];
+            if (state) params.push('state=' + encodeURIComponent(state));
+            if (focus) params.push('patient_focus=' + encodeURIComponent(focus));
+            if (beneficiaries.min) params.push('min_beneficiaries=' + encodeURIComponent(beneficiaries.min));
+            if (beneficiaries.max) params.push('max_beneficiaries=' + encodeURIComponent(beneficiaries.max));
+            if (condition) params.push('condition=' + encodeURIComponent(condition));
+            params.push('view=' + view);
+
+            window.location.href = url + params.join('&');
+        }
+    </script>
+</body>
+</html>

@@ -35,6 +35,19 @@
             opacity: 0.9;
             margin-top: 5px;
         }
+        .map-link-btn {
+            background: rgba(255,255,255,0.15);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 6px;
+            text-decoration: none;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: background 0.15s;
+        }
+        .map-link-btn:hover {
+            background: rgba(255,255,255,0.25);
+        }
         .stats-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -264,6 +277,58 @@
         .focus-both { background: #e9d8fd; color: #553c9a; }
         .focus-unknown { background: #e2e8f0; color: #4a5568; }
         .focus-pending { background: #bee3f8; color: #2a4365; }
+
+        /* Conditions dropdown */
+        .conditions-dropdown {
+            position: relative;
+            display: inline-block;
+        }
+        .conditions-btn {
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            padding: 4px 8px;
+            font-size: 11px;
+            background: #f7fafc;
+            cursor: pointer;
+            min-width: 60px;
+            text-align: left;
+        }
+        .conditions-btn:hover { border-color: #a0aec0; background: #edf2f7; }
+        .conditions-menu {
+            display: none;
+            position: absolute;
+            top: 100%;
+            left: 0;
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            z-index: 100;
+            min-width: 180px;
+            padding: 8px;
+        }
+        .conditions-menu.show { display: block; }
+        .condition-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 0;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        .condition-checkbox input { cursor: pointer; }
+        .conditions-save-btn {
+            margin-top: 8px;
+            width: 100%;
+            padding: 6px;
+            background: #3182ce;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        .conditions-save-btn:hover { background: #2c5282; }
 
         .parent-cell {
             display: flex;
@@ -788,10 +853,11 @@
         <div class="container" style="display: flex; justify-content: space-between; align-items: center;">
             <div>
                 <h1>CMS DME Analysis Dashboard</h1>
-                <p id="hcpcsDescription">HCPCS Code E0483 - High Frequency Chest Wall Oscillation System</p>
             </div>
-            <div class="admin-menu-container">
-                <button class="admin-menu-btn" onclick="toggleAdminMenu()" title="Admin Menu">&#8942;</button>
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <a href="/map" class="map-link-btn" title="View Provider Map">View Map</a>
+                <div class="admin-menu-container">
+                    <button class="admin-menu-btn" onclick="toggleAdminMenu()" title="Admin Menu">&#8942;</button>
                 <div class="admin-dropdown" id="adminDropdown">
                     <button class="admin-dropdown-item" onclick="openRefreshModal()">
                         <i>&#x21BB;</i> Refresh Data
@@ -806,6 +872,7 @@
                     <button class="admin-dropdown-item" onclick="openManageParentsModal()">
                         <i>&#x1F3E2;</i> Manage Parents
                     </button>
+                </div>
                 </div>
             </div>
         </div>
@@ -948,6 +1015,12 @@
                         <option value="Pediatric">Pediatric</option>
                         <option value="Both">Both</option>
                         <option value="Unknown">Unknown</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="condition">Condition</label>
+                    <select id="condition">
+                        <option value="all">All Conditions</option>
                     </select>
                 </div>
                 <div class="form-group">
@@ -1131,6 +1204,20 @@
             });
         }
 
+        // Load conditions for dropdown
+        let allConditions = [];
+        async function loadConditions() {
+            const response = await fetch('/api/conditions');
+            allConditions = await response.json();
+            const select = document.getElementById('condition');
+            allConditions.forEach(cond => {
+                const option = document.createElement('option');
+                option.value = cond.code;
+                option.textContent = cond.name;
+                select.appendChild(option);
+            });
+        }
+
         // Load HCPCS codes for dropdown
         async function loadHcpcsCodes() {
             const response = await fetch('/api/hcpcs_codes');
@@ -1232,12 +1319,14 @@
             const patientFocus = document.getElementById('patient_focus').value;
             const year = document.getElementById('yearFilterTop').value;
             const hcpcsCode = document.getElementById('hcpcsFilterTop').value;
+            const condition = document.getElementById('condition').value;
 
             const params = new URLSearchParams({
                 npi, name, state,
                 patient_focus: patientFocus,
                 year: year,
                 hcpcs_code: hcpcsCode,
+                condition: condition,
                 page: currentPage,
                 per_page: perPage,
                 sort_by: currentSort.column,
@@ -1290,6 +1379,7 @@
                             <th class="sortable ${getSortClass('last_name')}" onclick="sortData('last_name')">Name</th>
                             <th class="sortable ${getSortClass('specialty_desc')}" onclick="sortData('specialty_desc')">Specialty</th>
                             <th class="sortable ${getSortClass('patient_focus')}" onclick="sortData('patient_focus')">Patient Focus</th>
+                            <th>Conditions</th>
                             <th class="sortable ${getSortClass('total_claims')}" onclick="sortData('total_claims')">Total Claims</th>
                             <th class="sortable ${getSortClass('total_beneficiaries')}" onclick="sortData('total_beneficiaries')">Beneficiaries</th>
                             <th class="sortable ${getSortClass('cms_state')}" onclick="sortData('cms_state')">Location</th>
@@ -1312,6 +1402,16 @@
                     : '<span style="color:#999">Pending enrichment</span>';
 
                 const specialty = p.specialty_desc ? (p.specialty_desc.length > 25 ? p.specialty_desc.substring(0, 25) + '...' : p.specialty_desc) : '';
+                const providerConditionCodes = (p.conditions || []).map(c => c.code);
+                const conditionsDisplay = providerConditionCodes.length > 0
+                    ? providerConditionCodes.join(', ')
+                    : '<span style="color:#999">None</span>';
+                const conditionCheckboxes = allConditions.map(c => `
+                    <label class="condition-checkbox">
+                        <input type="checkbox" value="${c.id}" ${providerConditionCodes.includes(c.code) ? 'checked' : ''}>
+                        ${c.name}
+                    </label>
+                `).join('');
                 html += `
                     <tr>
                         <td><a href="/provider/${p.npi}" class="npi-link">${p.npi}</a></td>
@@ -1325,6 +1425,15 @@
                                 <option value="Both" ${p.patient_focus === 'Both' ? 'selected' : ''}>Both</option>
                                 <option value="Unknown" ${p.patient_focus === 'Unknown' ? 'selected' : ''}>Unknown</option>
                             </select>
+                        </td>
+                        <td>
+                            <div class="conditions-dropdown">
+                                <button class="conditions-btn" onclick="toggleConditionsDropdown('${p.npi}')">${conditionsDisplay}</button>
+                                <div class="conditions-menu" id="conditions-menu-${p.npi}">
+                                    ${conditionCheckboxes}
+                                    <button class="conditions-save-btn" onclick="saveConditions('${p.npi}')">Save</button>
+                                </div>
+                            </div>
                         </td>
                         <td>${(p.total_claims || 0).toLocaleString()}</td>
                         <td>${(p.total_beneficiaries || 0).toLocaleString()}</td>
@@ -1396,12 +1505,60 @@
             }
         }
 
+        // Toggle conditions dropdown
+        function toggleConditionsDropdown(npi) {
+            // Close all other dropdowns
+            document.querySelectorAll('.conditions-menu.show').forEach(menu => {
+                if (menu.id !== 'conditions-menu-' + npi) {
+                    menu.classList.remove('show');
+                }
+            });
+            const menu = document.getElementById('conditions-menu-' + npi);
+            menu.classList.toggle('show');
+        }
+
+        // Save conditions
+        async function saveConditions(npi) {
+            const menu = document.getElementById('conditions-menu-' + npi);
+            const checkedBoxes = menu.querySelectorAll('input[type="checkbox"]:checked');
+            const conditionIds = Array.from(checkedBoxes).map(cb => parseInt(cb.value));
+
+            try {
+                const response = await fetch(`/api/provider/${npi}/conditions`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ condition_ids: conditionIds })
+                });
+                if (response.ok) {
+                    menu.classList.remove('show');
+                    // Refresh the table to show updated conditions
+                    searchProviders(currentPage);
+                } else {
+                    const err = await response.json();
+                    alert('Error: ' + (err.error || 'Failed to update conditions'));
+                }
+            } catch (error) {
+                console.error('Update error:', error);
+                alert('Error updating conditions');
+            }
+        }
+
+        // Close conditions dropdown when clicking outside
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.conditions-dropdown')) {
+                document.querySelectorAll('.conditions-menu.show').forEach(menu => {
+                    menu.classList.remove('show');
+                });
+            }
+        });
+
         // Reset search
         function resetSearch() {
             document.getElementById('npi').value = '';
             document.getElementById('name').value = '';
             document.getElementById('state').value = '';
             document.getElementById('patient_focus').value = 'all';
+            document.getElementById('condition').value = 'all';
             document.getElementById('yearFilterTop').value = 'all';
             document.getElementById('hcpcsFilterTop').value = 'all';
             document.getElementById('hcpcsDescription').textContent = 'All HCPCS Codes';
@@ -1417,12 +1574,14 @@
             const patientFocus = document.getElementById('patient_focus').value;
             const year = document.getElementById('yearFilterTop').value;
             const hcpcsCode = document.getElementById('hcpcsFilterTop').value;
+            const condition = document.getElementById('condition').value;
 
             const params = new URLSearchParams({
                 npi, name, state,
                 patient_focus: patientFocus,
                 year: year,
-                hcpcs_code: hcpcsCode
+                hcpcs_code: hcpcsCode,
+                condition: condition
             });
 
             window.location.href = `/api/export?${params}`;
@@ -1667,7 +1826,7 @@
                 const parentClass = parentName === 'Independent' ? 'badge-unknown' : 'badge-adult';
                 html += `
                     <tr>
-                        <td><span class="npi-link">${s.npi}</span></td>
+                        <td><a href="/supplier/${s.npi}" class="npi-link">${s.npi}</a></td>
                         <td>${name}${s.credentials ? ', ' + s.credentials : ''}</td>
                         <td>
                             <div class="parent-cell">
@@ -1967,6 +2126,7 @@
         loadStates();
         loadYears();
         loadHcpcsCodes();
+        loadConditions();
         searchProviders(1);
 
         // ============== ADMIN MENU FUNCTIONS ==============

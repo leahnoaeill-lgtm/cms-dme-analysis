@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Provider {{ provider.npi }} - CMS DME Analysis</title>
+    <title>Supplier {{ supplier.npi }} - CMS DME Analysis</title>
     <style>
         * {
             box-sizing: border-box;
@@ -86,43 +86,25 @@
             font-size: 0.85rem;
             font-weight: 600;
         }
-        .badge-adult { background: #c6f6d5; color: #22543d; }
-        .badge-pediatric { background: #feebc8; color: #744210; }
-        .badge-both { background: #e9d8fd; color: #553c9a; }
-        .badge-unknown { background: #e2e8f0; color: #4a5568; }
         .badge-pending { background: #bee3f8; color: #2a4365; }
         .badge-completed { background: #c6f6d5; color: #22543d; }
         .badge-failed { background: #fed7d7; color: #742a2a; }
-
-        .clinic-card {
-            border: 1px solid #e2e8f0;
-            border-radius: 8px;
-            padding: 15px;
-            margin-bottom: 15px;
-        }
-        .clinic-card:last-child {
-            margin-bottom: 0;
-        }
-        .clinic-primary {
-            border-color: #4299e1;
-            background: #ebf8ff;
-        }
-        .clinic-name {
-            font-weight: 600;
-            font-size: 1.1rem;
-            color: #333;
-            margin-bottom: 8px;
-        }
-        .clinic-address {
-            color: #555;
-        }
-        .clinic-meta {
-            margin-top: 10px;
+        .badge-unknown { background: #e2e8f0; color: #4a5568; }
+        .ticker-badge {
+            background: #4CAF50;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 4px;
             font-size: 0.85rem;
-            color: #666;
+            font-weight: 500;
         }
-        .clinic-meta a {
-            color: #4299e1;
+        .parent-link {
+            color: #2c5282;
+            text-decoration: none;
+            font-weight: 500;
+        }
+        .parent-link:hover {
+            text-decoration: underline;
         }
         .stats-row {
             display: grid;
@@ -178,18 +160,18 @@
             background: #edf2f7;
         }
         .sortable::after {
-            content: '⇅';
+            content: '\21C5';
             position: absolute;
             right: 4px;
             color: #cbd5e0;
             font-size: 0.7rem;
         }
         .sortable.asc::after {
-            content: '↑';
+            content: '\2191';
             color: #2c5282;
         }
         .sortable.desc::after {
-            content: '↓';
+            content: '\2193';
             color: #2c5282;
         }
         .chart-controls {
@@ -242,6 +224,24 @@
         .export-btn:hover {
             background: #1a365d;
         }
+        .parent-card {
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 15px;
+        }
+        .parent-card .parent-name {
+            font-weight: 600;
+            font-size: 1.1rem;
+            color: #333;
+            margin-bottom: 8px;
+        }
+        .parent-card .parent-meta {
+            color: #555;
+            font-size: 0.9rem;
+        }
+        .parent-card .parent-meta a {
+            color: #4299e1;
+        }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 </head>
@@ -249,61 +249,70 @@
     <header>
         <div class="container">
             <a href="/" class="back-link">&larr; Back to Dashboard</a>
-            <h1>Provider Details</h1>
+            <h1>Supplier Details</h1>
         </div>
     </header>
 
     <div class="container">
-        <!-- Provider Info -->
+        <!-- Supplier Info -->
         <div class="card">
             <div class="card-header">
-                <h2>Provider Information</h2>
+                <h2>Supplier Information</h2>
             </div>
             <div class="card-body">
                 <div class="info-grid">
                     <div class="info-item">
                         <span class="info-label">NPI</span>
-                        <span class="info-value">{{ provider.npi }}</span>
+                        <span class="info-value">{{ supplier.npi }}</span>
                     </div>
                     <div class="info-item">
                         <span class="info-label">Name</span>
                         <span class="info-value">
-                            {{ provider.first_name or '' }} {{ provider.last_name or '' }}{% if provider.credentials %}, {{ provider.credentials }}{% endif %}
+                            {% if supplier.entity_code == 'O' %}
+                                {{ supplier.last_name or '' }}
+                            {% else %}
+                                {{ supplier.first_name or '' }} {{ supplier.last_name or '' }}{% if supplier.credentials %}, {{ supplier.credentials }}{% endif %}
+                            {% endif %}
                         </span>
                     </div>
                     <div class="info-item">
-                        <span class="info-label">Patient Focus</span>
-                        <span class="info-value">
-                            {% set focus = provider.patient_focus or 'Pending' %}
-                            <span class="badge badge-{{ focus.lower() }}">{{ focus }}</span>
-                        </span>
+                        <span class="info-label">Business Name</span>
+                        <span class="info-value">{{ supplier.business_name or 'N/A' }}</span>
                     </div>
                     <div class="info-item">
                         <span class="info-label">Enrichment Status</span>
                         <span class="info-value">
-                            {% set status = provider.search_status or 'pending' %}
+                            {% set status = supplier.search_status or 'pending' %}
                             <span class="badge badge-{{ status }}">{{ status | capitalize }}</span>
                         </span>
                     </div>
                     <div class="info-item">
                         <span class="info-label">Specialty</span>
-                        <span class="info-value">{{ provider.specialty_desc or 'N/A' }}</span>
+                        <span class="info-value">{{ supplier.specialty_desc or 'N/A' }}</span>
                     </div>
                     <div class="info-item">
-                        <span class="info-label">CMS Address</span>
+                        <span class="info-label">Address</span>
                         <span class="info-value">
-                            {{ provider.cms_street1 or '' }}<br>
-                            {{ provider.cms_city or '' }}, {{ provider.cms_state or '' }} {{ provider.cms_zip or '' }}
+                            {{ supplier.street1 or '' }}<br>
+                            {{ supplier.city or '' }}, {{ supplier.state or '' }} {{ supplier.zip or '' }}
                         </span>
                     </div>
                     <div class="info-item">
                         <span class="info-label">RUCA Classification</span>
-                        <span class="info-value">{{ provider.ruca_category or 'N/A' }}</span>
+                        <span class="info-value">{{ supplier.ruca_desc or 'N/A' }}</span>
                     </div>
                     <div class="info-item">
                         <span class="info-label">Entity Code</span>
-                        <span class="info-value">{{ provider.entity_code or 'N/A' }}</span>
+                        <span class="info-value">{{ supplier.entity_code or 'N/A' }}</span>
                     </div>
+                    {% if supplier.parent_company_id %}
+                    <div class="info-item">
+                        <span class="info-label">Parent Company</span>
+                        <span class="info-value">
+                            <a href="/parent/{{ supplier.parent_company_id }}" class="parent-link">{{ supplier.parent_company_name }}</a>
+                        </span>
+                    </div>
+                    {% endif %}
                 </div>
             </div>
         </div>
@@ -316,23 +325,23 @@
             <div class="card-body">
                 <div class="stats-row">
                     <div class="stat-item">
-                        <div class="stat-value">{{ provider.total_claims or 0 }}</div>
+                        <div class="stat-value">{{ "{:,}".format(stats.total_claims) }}</div>
                         <div class="stat-label">Total Claims</div>
                     </div>
                     <div class="stat-item">
-                        <div class="stat-value">{{ provider.total_services or 0 }}</div>
+                        <div class="stat-value">{{ "{:,}".format(stats.total_services) }}</div>
                         <div class="stat-label">Total Services</div>
                     </div>
                     <div class="stat-item">
-                        <div class="stat-value">{{ provider.total_suppliers or 0 }}</div>
-                        <div class="stat-label">Suppliers</div>
+                        <div class="stat-value">{{ "{:,}".format(stats.total_beneficiaries) }}</div>
+                        <div class="stat-label">Total Beneficiaries</div>
                     </div>
                     <div class="stat-item">
-                        <div class="stat-value">${{ "%.2f" | format(provider.avg_medicare_payment or 0) }}</div>
+                        <div class="stat-value">${{ "%.2f" | format(stats.avg_medicare_payment) }}</div>
                         <div class="stat-label">Avg Medicare Payment</div>
                     </div>
                     <div class="stat-item">
-                        <div class="stat-value">${{ "%.2f" | format(provider.avg_submitted_charge or 0) }}</div>
+                        <div class="stat-value">${{ "%.2f" | format(stats.avg_submitted_charge) }}</div>
                         <div class="stat-label">Avg Submitted Charge</div>
                     </div>
                 </div>
@@ -380,7 +389,7 @@
         <div class="card">
             <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
                 <h2>Year-over-Year Trends</h2>
-                <a href="/api/export/provider/{{ provider.npi }}" class="export-btn">Export to Excel</a>
+                <a href="/api/export/supplier/{{ supplier.npi }}" class="export-btn">Export to Excel</a>
             </div>
             <div class="card-body">
                 <div class="chart-controls">
@@ -400,41 +409,35 @@
         </div>
         {% endif %}
 
-        <!-- Clinic Locations -->
+        <!-- Parent Company -->
         <div class="card">
             <div class="card-header">
-                <h2>Clinic Locations ({{ clinics | length }})</h2>
+                <h2>Parent Company</h2>
             </div>
             <div class="card-body">
-                {% if clinics %}
-                    {% for clinic in clinics %}
-                    <div class="clinic-card {% if clinic.is_primary %}clinic-primary{% endif %}">
-                        {% if clinic.clinic_name %}
-                        <div class="clinic-name">{{ clinic.clinic_name }}</div>
+                {% if supplier.parent_company_id %}
+                <div class="parent-card">
+                    <div class="parent-name">
+                        <a href="/parent/{{ supplier.parent_company_id }}" class="parent-link">{{ supplier.parent_company_name }}</a>
+                        {% if supplier.parent_ticker %}
+                        <span class="ticker-badge">{{ supplier.parent_ticker }}</span>
                         {% endif %}
-                        <div class="clinic-address">
-                            {{ clinic.street_address or '' }}<br>
-                            {{ clinic.city or '' }}, {{ clinic.state or '' }} {{ clinic.zip or '' }}
-                            {% if clinic.phone %}<br>Phone: {{ clinic.phone }}{% endif %}
-                        </div>
-                        <div class="clinic-meta">
-                            Source: {{ clinic.source_name or 'Unknown' }}
-                            {% if clinic.source_url %}
-                            | <a href="{{ clinic.source_url }}" target="_blank">View Source</a>
-                            {% endif %}
-                            {% if clinic.is_primary %}
-                            | <strong>Primary Location</strong>
-                            {% endif %}
-                        </div>
                     </div>
-                    {% endfor %}
+                    <div class="parent-meta">
+                        {% if supplier.parent_hq_state %}HQ State: {{ supplier.parent_hq_state }}{% endif %}
+                        {% if supplier.parent_website %}
+                        | <a href="https://{{ supplier.parent_website }}" target="_blank">{{ supplier.parent_website }}</a>
+                        {% endif %}
+                    </div>
+                </div>
                 {% else %}
-                    <p style="color: #666;">No clinic locations found. Provider may be pending enrichment.</p>
+                <p style="color: #666;">No parent company assigned.</p>
                 {% endif %}
             </div>
         </div>
 
         <!-- HCPCS Information -->
+        {% if yearly_data %}
         <div class="card">
             <div class="card-header">
                 <h2>HCPCS Information</h2>
@@ -443,23 +446,24 @@
                 <div class="info-grid">
                     <div class="info-item">
                         <span class="info-label">HCPCS Code</span>
-                        <span class="info-value">{{ provider.hcpcs_code or 'N/A' }}</span>
+                        <span class="info-value">{{ yearly_data[0].hcpcs_code or 'N/A' }}</span>
                     </div>
                     <div class="info-item">
                         <span class="info-label">Description</span>
-                        <span class="info-value">{{ provider.hcpcs_desc or 'N/A' }}</span>
+                        <span class="info-value">{{ yearly_data[0].hcpcs_desc or 'N/A' }}</span>
                     </div>
                     <div class="info-item">
                         <span class="info-label">RBCS Category</span>
-                        <span class="info-value">{{ provider.rbcs_desc or 'N/A' }}</span>
+                        <span class="info-value">{{ yearly_data[0].rbcs_desc or 'N/A' }}</span>
                     </div>
                     <div class="info-item">
                         <span class="info-label">Rental Indicator</span>
-                        <span class="info-value">{{ 'Yes' if provider.supplier_rental_ind == 'Y' else 'No' }}</span>
+                        <span class="info-value">{{ 'Yes' if yearly_data[0].rental_indicator == 'Y' else 'No' }}</span>
                     </div>
                 </div>
             </div>
         </div>
+        {% endif %}
 
         <!-- External Links -->
         <div class="card">
@@ -467,15 +471,9 @@
                 <h2>External Resources</h2>
             </div>
             <div class="card-body">
-                <p style="margin-bottom: 15px;">View this provider on external platforms:</p>
-                <a href="https://npiregistry.cms.hhs.gov/provider-view/{{ provider.npi }}" target="_blank" class="badge badge-completed" style="margin-right: 10px; text-decoration: none;">
+                <p style="margin-bottom: 15px;">View this supplier on external platforms:</p>
+                <a href="https://npiregistry.cms.hhs.gov/provider-view/{{ supplier.npi }}" target="_blank" class="badge badge-completed" style="margin-right: 10px; text-decoration: none;">
                     NPI Registry
-                </a>
-                <a href="https://www.healthgrades.com/physician/dr-{{ (provider.first_name or '').lower() }}-{{ (provider.last_name or '').lower() }}" target="_blank" class="badge badge-pending" style="margin-right: 10px; text-decoration: none;">
-                    Healthgrades
-                </a>
-                <a href="https://www.doximity.com/pub/{{ provider.npi }}" target="_blank" class="badge badge-adult" style="text-decoration: none;">
-                    Doximity
                 </a>
             </div>
         </div>
@@ -496,7 +494,6 @@
         const tbody = table.querySelector('tbody');
         const rows = Array.from(tbody.querySelectorAll('tr'));
 
-        // Column index mapping
         const colIndex = {
             'data_year': 0, 'hcpcs_code': 1, 'total_claims': 2, 'total_beneficiaries': 3,
             'total_services': 4, 'avg_submitted_charge': 5, 'avg_medicare_allowed': 6, 'avg_medicare_payment': 7
@@ -523,7 +520,6 @@
 
         rows.forEach(row => tbody.appendChild(row));
 
-        // Update sort indicators
         table.querySelectorAll('th.sortable').forEach(th => {
             th.classList.remove('asc', 'desc');
         });
@@ -533,7 +529,6 @@
         }
     }
 
-    // Set initial sort indicator
     document.addEventListener('DOMContentLoaded', () => {
         const table = document.getElementById('yearlyTable');
         if (table) {
@@ -571,7 +566,6 @@
             axis: cb.dataset.axis
         }));
 
-        // Aggregate data by year (sum across HCPCS codes for count, avg for dollar)
         const byYear = {};
         yearlyData.forEach(row => {
             const yr = row.data_year;
@@ -594,7 +588,6 @@
             const data = years.map(yr => {
                 const entry = byYear[yr].sums[m.key];
                 if (!entry) return 0;
-                // Count metrics: sum; Dollar metrics: average across HCPCS codes
                 return m.axis === 'dollar' ? +(entry.total / entry.n).toFixed(2) : entry.total;
             });
             return {

@@ -282,3 +282,39 @@ CREATE INDEX IF NOT EXISTS idx_supplier_yearly_npi ON supplier_yearly_data(npi);
 CREATE INDEX IF NOT EXISTS idx_supplier_yearly_year ON supplier_yearly_data(data_year);
 CREATE INDEX IF NOT EXISTS idx_supplier_yearly_hcpcs ON supplier_yearly_data(hcpcs_code);
 CREATE INDEX IF NOT EXISTS idx_supplier_enrichment_status ON supplier_enrichment(search_status);
+
+-- ============== CONDITION TYPES ==============
+
+-- Condition types lookup table (diseases/conditions providers treat)
+CREATE TABLE IF NOT EXISTS condition_types (
+    id SERIAL PRIMARY KEY,
+    code VARCHAR(20) UNIQUE NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    display_order INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Junction table: provider <-> conditions (many-to-many)
+CREATE TABLE IF NOT EXISTS provider_conditions (
+    id SERIAL PRIMARY KEY,
+    npi VARCHAR(10) NOT NULL REFERENCES providers(npi),
+    condition_id INTEGER NOT NULL REFERENCES condition_types(id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT provider_conditions_unique UNIQUE(npi, condition_id)
+);
+
+-- Indexes for condition tables
+CREATE INDEX IF NOT EXISTS idx_provider_conditions_npi ON provider_conditions(npi);
+CREATE INDEX IF NOT EXISTS idx_provider_conditions_condition ON provider_conditions(condition_id);
+
+-- Seed condition types
+INSERT INTO condition_types (code, name, display_order) VALUES
+    ('ALS', 'ALS', 1),
+    ('MD', 'Muscular Dystrophy', 2),
+    ('SCI', 'Spinal Cord Injury', 3),
+    ('SMA', 'SMA', 4),
+    ('BRONCH', 'Bronchiectasis', 5),
+    ('COPD', 'COPD', 6),
+    ('CF', 'Cystic Fibrosis', 7),
+    ('OTHER', 'Other', 8)
+ON CONFLICT (code) DO NOTHING;

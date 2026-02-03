@@ -8,12 +8,15 @@ from flask import Flask, render_template, request, jsonify, Response
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from openpyxl import Workbook
+from openpyxl.styles import Font
 from io import BytesIO
 import requests
 import json
 import time
 import threading
 from datetime import datetime
+import folium
+from folium.plugins import HeatMap, MarkerCluster
 
 app = Flask(__name__)
 
@@ -318,6 +321,7 @@ def get_providers():
     patient_focus = request.args.get('patient_focus', '').strip()
     year = request.args.get('year', '').strip()
     hcpcs_code = request.args.get('hcpcs_code', '').strip()
+    condition = request.args.get('condition', '').strip()
     page = int(request.args.get('page', 1))
     per_page = int(request.args.get('per_page', 50))
     sort_by = request.args.get('sort_by', 'total_claims').strip()
@@ -366,6 +370,16 @@ def get_providers():
     if hcpcs_code and hcpcs_code != 'all':
         where_clauses.append("y.hcpcs_code = %s")
         params.append(hcpcs_code)
+
+    if condition and condition != 'all':
+        where_clauses.append("""
+            p.npi IN (
+                SELECT pc.npi FROM provider_conditions pc
+                JOIN condition_types ct ON pc.condition_id = ct.id
+                WHERE ct.code = %s
+            )
+        """)
+        params.append(condition)
 
     where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
 
@@ -472,6 +486,16 @@ def get_providers():
         """, [provider['npi']])
         provider['yearly_data'] = [dict(row) for row in cur.fetchall()]
 
+        # Get conditions for each provider
+        cur.execute("""
+            SELECT ct.id, ct.code, ct.name
+            FROM provider_conditions pc
+            JOIN condition_types ct ON pc.condition_id = ct.id
+            WHERE pc.npi = %s
+            ORDER BY ct.display_order
+        """, [provider['npi']])
+        provider['conditions'] = [dict(row) for row in cur.fetchall()]
+
     cur.close()
     conn.close()
 
@@ -498,6 +522,79 @@ def get_states():
     cur.close()
     conn.close()
     return jsonify(states)
+
+@app.route('/api/conditions')
+def get_conditions():
+    """Get list of condition types for filter dropdown."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, code, name
+        FROM condition_types
+        ORDER BY display_order
+    """)
+    conditions = [{'id': row['id'], 'code': row['code'], 'name': row['name']} for row in cur.fetchall()]
+    cur.close()
+    conn.close()
+    return jsonify(conditions)
+
+@app.route('/api/provider/<npi>/conditions', methods=['GET'])
+def get_provider_conditions(npi):
+    """Get conditions for a specific provider."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT ct.id, ct.code, ct.name
+        FROM provider_conditions pc
+        JOIN condition_types ct ON pc.condition_id = ct.id
+        WHERE pc.npi = %s
+        ORDER BY ct.display_order
+    """, (npi,))
+    conditions = [{'id': row['id'], 'code': row['code'], 'name': row['name']} for row in cur.fetchall()]
+    cur.close()
+    conn.close()
+    return jsonify(conditions)
+
+@app.route('/api/provider/<npi>/conditions', methods=['PUT'])
+def update_provider_conditions(npi):
+    """Update a provider's conditions (replace all)."""
+    data = request.get_json()
+    condition_ids = data.get('condition_ids', [])
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    try:
+        # Delete existing conditions for this provider
+        cur.execute("DELETE FROM provider_conditions WHERE npi = %s", (npi,))
+
+        # Insert new conditions
+        for condition_id in condition_ids:
+            cur.execute("""
+                INSERT INTO provider_conditions (npi, condition_id)
+                VALUES (%s, %s)
+                ON CONFLICT (npi, condition_id) DO NOTHING
+            """, (npi, condition_id))
+
+        conn.commit()
+
+        # Return updated conditions
+        cur.execute("""
+            SELECT ct.id, ct.code, ct.name
+            FROM provider_conditions pc
+            JOIN condition_types ct ON pc.condition_id = ct.id
+            WHERE pc.npi = %s
+            ORDER BY ct.display_order
+        """, (npi,))
+        conditions = [{'id': row['id'], 'code': row['code'], 'name': row['name']} for row in cur.fetchall()]
+
+        return jsonify({'npi': npi, 'conditions': conditions})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
 
 @app.route('/api/provider/<npi>/patient-focus', methods=['PUT'])
 def update_patient_focus(npi):
@@ -577,6 +674,125 @@ def provider_detail(npi):
 
     return render_template('provider_detail.html', provider=dict(provider), clinics=clinics, yearly_data=yearly_data)
 
+@app.route('/api/export/provider/<npi>')
+def export_provider(npi):
+    """Export a single provider's data to Excel with 3 sheets."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    # Get provider info
+    cur.execute("""
+        SELECT p.*, e.patient_focus, e.search_status
+        FROM providers p
+        LEFT JOIN provider_enrichment e ON p.npi = e.npi
+        WHERE p.npi = %s
+    """, [npi])
+    provider = cur.fetchone()
+    if not provider:
+        cur.close()
+        conn.close()
+        return "Provider not found", 404
+    provider = dict(provider)
+
+    # Get yearly data
+    cur.execute("""
+        SELECT * FROM provider_yearly_data WHERE npi = %s ORDER BY data_year
+    """, [npi])
+    yearly_data = [dict(row) for row in cur.fetchall()]
+
+    # Get clinics
+    cur.execute("""
+        SELECT * FROM clinics WHERE npi = %s ORDER BY is_primary DESC
+    """, [npi])
+    clinics = [dict(row) for row in cur.fetchall()]
+
+    cur.close()
+    conn.close()
+
+    wb = Workbook()
+
+    # Sheet 1: Provider Info
+    ws1 = wb.active
+    ws1.title = "Provider Info"
+    info_fields = [
+        ('NPI', provider.get('npi')),
+        ('First Name', provider.get('first_name')),
+        ('Last Name', provider.get('last_name')),
+        ('Credentials', provider.get('credentials')),
+        ('Specialty', provider.get('specialty_desc')),
+        ('Patient Focus', provider.get('patient_focus', 'Pending')),
+        ('Entity Code', provider.get('entity_code')),
+        ('Street', provider.get('cms_street1')),
+        ('City', provider.get('cms_city')),
+        ('State', provider.get('cms_state')),
+        ('Zip', provider.get('cms_zip')),
+        ('RUCA Category', provider.get('ruca_category')),
+        ('Enrichment Status', provider.get('search_status')),
+    ]
+    ws1.append(['Field', 'Value'])
+    for label, value in info_fields:
+        ws1.append([label, value or ''])
+    for col in ws1.columns:
+        ws1.column_dimensions[col[0].column_letter].width = 25
+    ws1.cell(row=1, column=1).font = Font(bold=True)
+    ws1.cell(row=1, column=2).font = Font(bold=True)
+
+    # Sheet 2: Yearly Billing Data
+    ws2 = wb.create_sheet("Yearly Billing Data")
+    yearly_headers = ['Year', 'HCPCS Code', 'Claims', 'Beneficiaries', 'Services',
+                      'Avg Submitted Charge', 'Avg Medicare Allowed', 'Avg Medicare Payment']
+    ws2.append(yearly_headers)
+    for col_idx in range(1, len(yearly_headers) + 1):
+        ws2.cell(row=1, column=col_idx).font = Font(bold=True)
+    for yd in yearly_data:
+        ws2.append([
+            yd.get('data_year'),
+            yd.get('hcpcs_code'),
+            yd.get('total_claims', 0),
+            yd.get('total_beneficiaries', 0),
+            yd.get('total_services', 0),
+            yd.get('avg_submitted_charge', 0),
+            yd.get('avg_medicare_allowed', 0),
+            yd.get('avg_medicare_payment', 0),
+        ])
+    for col in ws2.columns:
+        max_length = max(len(str(cell.value or '')) for cell in col)
+        ws2.column_dimensions[col[0].column_letter].width = min(max_length + 2, 30)
+
+    # Sheet 3: Clinic Locations
+    ws3 = wb.create_sheet("Clinic Locations")
+    clinic_headers = ['Clinic Name', 'Street Address', 'City', 'State', 'Zip', 'Phone', 'Primary', 'Source']
+    ws3.append(clinic_headers)
+    for col_idx in range(1, len(clinic_headers) + 1):
+        ws3.cell(row=1, column=col_idx).font = Font(bold=True)
+    for c in clinics:
+        ws3.append([
+            c.get('clinic_name', ''),
+            c.get('street_address', ''),
+            c.get('city', ''),
+            c.get('state', ''),
+            c.get('zip', ''),
+            c.get('phone', ''),
+            'Yes' if c.get('is_primary') else 'No',
+            c.get('source_name', ''),
+        ])
+    for col in ws3.columns:
+        max_length = max(len(str(cell.value or '')) for cell in col)
+        ws3.column_dimensions[col[0].column_letter].width = min(max_length + 2, 40)
+
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    name = f"{provider.get('last_name', '')}_{provider.get('first_name', '')}".strip('_')
+    filename = f"provider_{npi}_{name}.xlsx"
+
+    return Response(
+        output.getvalue(),
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        headers={'Content-Disposition': f'attachment; filename={filename}'}
+    )
+
 @app.route('/api/export')
 def export_providers():
     """Export provider data to Excel."""
@@ -590,6 +806,7 @@ def export_providers():
     patient_focus = request.args.get('patient_focus', '').strip()
     year = request.args.get('year', '').strip()
     hcpcs_code = request.args.get('hcpcs_code', '').strip()
+    condition = request.args.get('condition', '').strip()
 
     # Build query
     where_clauses = []
@@ -607,6 +824,15 @@ def export_providers():
     if patient_focus and patient_focus != 'all':
         where_clauses.append("e.patient_focus = %s")
         params.append(patient_focus)
+    if condition and condition != 'all':
+        where_clauses.append("""
+            p.npi IN (
+                SELECT pc.npi FROM provider_conditions pc
+                JOIN condition_types ct ON pc.condition_id = ct.id
+                WHERE ct.code = %s
+            )
+        """)
+        params.append(condition)
 
     # Check if we need to filter by year or HCPCS code
     needs_yearly_filter = (year and year != 'all') or (hcpcs_code and hcpcs_code != 'all')
@@ -679,6 +905,21 @@ def export_providers():
                 provider_clinics[row['npi']] = []
             provider_clinics[row['npi']].append(dict(row))
 
+    # Get conditions for each provider
+    provider_conditions = {}
+    if providers:
+        cur.execute("""
+            SELECT pc.npi, ct.code, ct.name
+            FROM provider_conditions pc
+            JOIN condition_types ct ON pc.condition_id = ct.id
+            WHERE pc.npi = ANY(%s)
+            ORDER BY pc.npi, ct.display_order
+        """, [npis])
+        for row in cur.fetchall():
+            if row['npi'] not in provider_conditions:
+                provider_conditions[row['npi']] = []
+            provider_conditions[row['npi']].append(row['name'])
+
     cur.close()
     conn.close()
 
@@ -689,7 +930,7 @@ def export_providers():
 
     # Headers
     headers = ['NPI', 'First Name', 'Last Name', 'Credentials', 'Specialty',
-               'Patient Focus', 'Total Claims', 'Beneficiaries', 'City', 'State', 'Year', 'HCPCS Code',
+               'Patient Focus', 'Conditions', 'Total Claims', 'Beneficiaries', 'City', 'State', 'Year', 'HCPCS Code',
                'Clinic Name', 'Clinic Address', 'Clinic City', 'Clinic State', 'Clinic Zip']
     ws.append(headers)
 
@@ -700,6 +941,8 @@ def export_providers():
     # Data rows
     for p in providers:
         clinics = provider_clinics.get(p['npi'], [])
+        conditions = provider_conditions.get(p['npi'], [])
+        conditions_str = ', '.join(conditions) if conditions else ''
         if clinics:
             for i, clinic in enumerate(clinics):
                 row = [
@@ -709,6 +952,7 @@ def export_providers():
                     p['credentials'] if i == 0 else '',
                     p['specialty_desc'] if i == 0 else '',
                     p['patient_focus'] if i == 0 else '',
+                    conditions_str if i == 0 else '',
                     p['total_claims'] if i == 0 else '',
                     p['total_beneficiaries'] if i == 0 else '',
                     p['cms_city'] if i == 0 else '',
@@ -725,7 +969,7 @@ def export_providers():
         else:
             row = [
                 p['npi'], p['first_name'], p['last_name'], p['credentials'],
-                p['specialty_desc'], p['patient_focus'], p['total_claims'],
+                p['specialty_desc'], p['patient_focus'], conditions_str, p['total_claims'],
                 p['total_beneficiaries'], p['cms_city'], p['cms_state'], p['data_year'],
                 p.get('hcpcs_code', ''),
                 '', '', '', '', ''
@@ -1544,6 +1788,432 @@ def export_suppliers():
     year_str = year if year and year != 'all' else 'all_years'
     hcpcs_str = hcpcs_code if hcpcs_code and hcpcs_code != 'all' else 'all_codes'
     filename = f"cms_suppliers_{hcpcs_str}_{year_str}.xlsx"
+
+    return Response(
+        output.getvalue(),
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        headers={'Content-Disposition': f'attachment; filename={filename}'}
+    )
+
+# ============== PROVIDER MAP / HEATMAP ==============
+
+@app.route('/map')
+def provider_map():
+    """Interactive map showing provider locations as heatmap or markers."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    # Get filter parameters
+    state = request.args.get('state', '').strip()
+    patient_focus = request.args.get('patient_focus', '').strip()
+    view_mode = request.args.get('view', 'heatmap')  # 'heatmap' or 'markers'
+    min_beneficiaries = request.args.get('min_beneficiaries', '').strip()
+    max_beneficiaries = request.args.get('max_beneficiaries', '').strip()
+    condition = request.args.get('condition', '').strip()
+
+    # Get available states for filter dropdown
+    cur.execute("SELECT DISTINCT cms_state FROM providers WHERE cms_state IS NOT NULL ORDER BY cms_state")
+    available_states = [row['cms_state'] for row in cur.fetchall()]
+
+    # Get available conditions for filter dropdown
+    cur.execute("SELECT id, code, name FROM condition_types ORDER BY display_order")
+    available_conditions = [{'id': row['id'], 'code': row['code'], 'name': row['name']} for row in cur.fetchall()]
+
+    # Build query for geocoded providers
+    where_clauses = ["p.latitude IS NOT NULL", "p.longitude IS NOT NULL"]
+    having_clauses = []
+    params = []
+
+    if state:
+        where_clauses.append("p.cms_state = %s")
+        params.append(state)
+
+    if patient_focus:
+        where_clauses.append("e.patient_focus = %s")
+        params.append(patient_focus)
+
+    if condition:
+        where_clauses.append("""
+            p.npi IN (
+                SELECT pc.npi FROM provider_conditions pc
+                JOIN condition_types ct ON pc.condition_id = ct.id
+                WHERE ct.code = %s
+            )
+        """)
+        params.append(condition)
+
+    if min_beneficiaries:
+        having_clauses.append("COALESCE(SUM(y.total_beneficiaries), 0) >= %s")
+        params.append(int(min_beneficiaries))
+
+    if max_beneficiaries:
+        having_clauses.append("COALESCE(SUM(y.total_beneficiaries), 0) <= %s")
+        params.append(int(max_beneficiaries))
+
+    where_sql = " AND ".join(where_clauses)
+    having_sql = " AND ".join(having_clauses) if having_clauses else "1=1"
+
+    cur.execute(f"""
+        SELECT p.npi, p.first_name, p.last_name, p.cms_city, p.cms_state,
+               p.latitude, p.longitude, p.specialty_desc, p.total_claims,
+               e.patient_focus,
+               COALESCE(SUM(y.total_beneficiaries), 0) as total_beneficiaries
+        FROM providers p
+        LEFT JOIN provider_enrichment e ON p.npi = e.npi
+        LEFT JOIN provider_yearly_data y ON p.npi = y.npi
+        WHERE {where_sql}
+        GROUP BY p.npi, p.first_name, p.last_name, p.cms_city, p.cms_state,
+                 p.latitude, p.longitude, p.specialty_desc, p.total_claims,
+                 e.patient_focus
+        HAVING {having_sql}
+        ORDER BY p.total_claims DESC NULLS LAST
+        LIMIT 5000
+    """, params)
+    providers = [dict(row) for row in cur.fetchall()]
+
+    # Get geocoding stats
+    cur.execute("""
+        SELECT
+            COUNT(*) as total,
+            COUNT(latitude) as geocoded,
+            COUNT(*) - COUNT(latitude) as pending
+        FROM providers
+    """)
+    geo_stats = dict(cur.fetchone())
+
+    cur.close()
+    conn.close()
+
+    # Calculate map center
+    if providers:
+        avg_lat = sum(p['latitude'] for p in providers) / len(providers)
+        avg_lon = sum(p['longitude'] for p in providers) / len(providers)
+    else:
+        avg_lat, avg_lon = 39.8283, -98.5795  # Center of USA
+
+    # Create Folium map
+    m = folium.Map(location=[avg_lat, avg_lon], zoom_start=4, tiles='cartodbpositron')
+
+    if view_mode == 'heatmap' and providers:
+        # Create heatmap layer
+        heat_data = [[p['latitude'], p['longitude'], min(p['total_claims'] or 1, 1000)] for p in providers]
+        HeatMap(heat_data, radius=15, blur=10, max_zoom=10).add_to(m)
+    elif view_mode == 'markers' and providers:
+        # Create marker cluster
+        marker_cluster = MarkerCluster().add_to(m)
+        for p in providers:
+            name = f"{p['first_name'] or ''} {p['last_name'] or ''}".strip()
+            popup_html = f"""
+                <b>{name}</b><br>
+                NPI: <a href="/provider/{p['npi']}">{p['npi']}</a><br>
+                {p['cms_city']}, {p['cms_state']}<br>
+                Claims: {p['total_claims'] or 0:,}<br>
+                Beneficiaries: {p['total_beneficiaries'] or 0:,}<br>
+                Focus: {p['patient_focus'] or 'Unknown'}
+            """
+            folium.Marker(
+                location=[p['latitude'], p['longitude']],
+                popup=folium.Popup(popup_html, max_width=250),
+                tooltip=name
+            ).add_to(marker_cluster)
+
+    # Get the map HTML
+    map_html = m._repr_html_()
+
+    return render_template('provider_map.html',
+                         map_html=map_html,
+                         providers=providers,
+                         geo_stats=geo_stats,
+                         available_states=available_states,
+                         available_conditions=available_conditions,
+                         current_state=state,
+                         current_focus=patient_focus,
+                         current_view=view_mode,
+                         current_min_beneficiaries=min_beneficiaries,
+                         current_max_beneficiaries=max_beneficiaries,
+                         current_condition=condition)
+
+@app.route('/api/map/export')
+def export_map():
+    """Export the map as standalone HTML file."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    state = request.args.get('state', '').strip()
+    patient_focus = request.args.get('patient_focus', '').strip()
+    view_mode = request.args.get('view', 'heatmap')
+    min_beneficiaries = request.args.get('min_beneficiaries', '').strip()
+    max_beneficiaries = request.args.get('max_beneficiaries', '').strip()
+    condition = request.args.get('condition', '').strip()
+
+    where_clauses = ["p.latitude IS NOT NULL", "p.longitude IS NOT NULL"]
+    having_clauses = []
+    params = []
+
+    if state:
+        where_clauses.append("p.cms_state = %s")
+        params.append(state)
+
+    if patient_focus:
+        where_clauses.append("e.patient_focus = %s")
+        params.append(patient_focus)
+
+    if condition:
+        where_clauses.append("""
+            p.npi IN (
+                SELECT pc.npi FROM provider_conditions pc
+                JOIN condition_types ct ON pc.condition_id = ct.id
+                WHERE ct.code = %s
+            )
+        """)
+        params.append(condition)
+
+    if min_beneficiaries:
+        having_clauses.append("COALESCE(SUM(y.total_beneficiaries), 0) >= %s")
+        params.append(int(min_beneficiaries))
+
+    if max_beneficiaries:
+        having_clauses.append("COALESCE(SUM(y.total_beneficiaries), 0) <= %s")
+        params.append(int(max_beneficiaries))
+
+    where_sql = " AND ".join(where_clauses)
+    having_sql = " AND ".join(having_clauses) if having_clauses else "1=1"
+
+    cur.execute(f"""
+        SELECT p.npi, p.first_name, p.last_name, p.cms_city, p.cms_state,
+               p.latitude, p.longitude, p.specialty_desc, p.total_claims,
+               e.patient_focus,
+               COALESCE(SUM(y.total_beneficiaries), 0) as total_beneficiaries
+        FROM providers p
+        LEFT JOIN provider_enrichment e ON p.npi = e.npi
+        LEFT JOIN provider_yearly_data y ON p.npi = y.npi
+        WHERE {where_sql}
+        GROUP BY p.npi, p.first_name, p.last_name, p.cms_city, p.cms_state,
+                 p.latitude, p.longitude, p.specialty_desc, p.total_claims,
+                 e.patient_focus
+        HAVING {having_sql}
+        ORDER BY p.total_claims DESC NULLS LAST
+        LIMIT 5000
+    """, params)
+    providers = [dict(row) for row in cur.fetchall()]
+
+    cur.close()
+    conn.close()
+
+    if providers:
+        avg_lat = sum(p['latitude'] for p in providers) / len(providers)
+        avg_lon = sum(p['longitude'] for p in providers) / len(providers)
+    else:
+        avg_lat, avg_lon = 39.8283, -98.5795
+
+    m = folium.Map(location=[avg_lat, avg_lon], zoom_start=4, tiles='cartodbpositron')
+
+    if view_mode == 'heatmap' and providers:
+        heat_data = [[p['latitude'], p['longitude'], min(p['total_claims'] or 1, 1000)] for p in providers]
+        HeatMap(heat_data, radius=15, blur=10, max_zoom=10).add_to(m)
+    elif view_mode == 'markers' and providers:
+        marker_cluster = MarkerCluster().add_to(m)
+        for p in providers:
+            name = f"{p['first_name'] or ''} {p['last_name'] or ''}".strip()
+            popup_html = f"""
+                <b>{name}</b><br>
+                NPI: {p['npi']}<br>
+                {p['cms_city']}, {p['cms_state']}<br>
+                Claims: {p['total_claims'] or 0:,}<br>
+                Beneficiaries: {p['total_beneficiaries'] or 0:,}<br>
+                Focus: {p['patient_focus'] or 'Unknown'}
+            """
+            folium.Marker(
+                location=[p['latitude'], p['longitude']],
+                popup=folium.Popup(popup_html, max_width=250),
+                tooltip=name
+            ).add_to(marker_cluster)
+
+    # Add title to map
+    title_html = f'''
+        <div style="position: fixed; top: 10px; left: 50px; z-index: 1000;
+                    background: white; padding: 10px 20px; border-radius: 5px;
+                    box-shadow: 0 2px 5px rgba(0,0,0,0.2); font-family: Arial;">
+            <b>CMS DME Provider Map</b>
+            {f' - {state}' if state else ' - All States'}
+            | {len(providers)} providers
+        </div>
+    '''
+    m.get_root().html.add_child(folium.Element(title_html))
+
+    map_html = m._repr_html_()
+
+    state_str = state if state else 'all_states'
+    filename = f"provider_map_{state_str}_{view_mode}.html"
+
+    return Response(
+        map_html,
+        mimetype='text/html',
+        headers={'Content-Disposition': f'attachment; filename={filename}'}
+    )
+
+# ============== SUPPLIER DETAIL PAGE ==============
+
+@app.route('/supplier/<npi>')
+def supplier_detail(npi):
+    """Supplier detail page."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    # Get supplier info with enrichment and parent company
+    cur.execute("""
+        SELECT s.*, se.business_name, se.search_status, se.search_date, se.search_notes,
+               pc.id as parent_company_id, pc.name as parent_company_name,
+               pc.ticker as parent_ticker, pc.website as parent_website,
+               pc.headquarters_state as parent_hq_state
+        FROM suppliers s
+        LEFT JOIN supplier_enrichment se ON s.npi = se.npi
+        LEFT JOIN supplier_parent_map spm ON s.npi = spm.supplier_npi
+        LEFT JOIN parent_companies pc ON spm.parent_company_id = pc.id
+        WHERE s.npi = %s
+    """, [npi])
+    supplier = cur.fetchone()
+
+    if not supplier:
+        cur.close()
+        conn.close()
+        return "Supplier not found", 404
+
+    # Get yearly data
+    cur.execute("""
+        SELECT * FROM supplier_yearly_data WHERE npi = %s ORDER BY data_year DESC
+    """, [npi])
+    yearly_data = [dict(row) for row in cur.fetchall()]
+
+    # Compute aggregate stats from yearly data
+    total_claims = sum(yd.get('total_claims', 0) or 0 for yd in yearly_data)
+    total_services = sum(yd.get('total_services', 0) or 0 for yd in yearly_data)
+    total_beneficiaries = sum(yd.get('total_beneficiaries', 0) or 0 for yd in yearly_data)
+
+    payment_values = [yd.get('avg_medicare_payment', 0) or 0 for yd in yearly_data if yd.get('avg_medicare_payment')]
+    charge_values = [yd.get('avg_submitted_charge', 0) or 0 for yd in yearly_data if yd.get('avg_submitted_charge')]
+
+    stats = {
+        'total_claims': total_claims,
+        'total_services': total_services,
+        'total_beneficiaries': total_beneficiaries,
+        'avg_medicare_payment': sum(payment_values) / len(payment_values) if payment_values else 0,
+        'avg_submitted_charge': sum(charge_values) / len(charge_values) if charge_values else 0,
+    }
+
+    cur.close()
+    conn.close()
+
+    return render_template('supplier_detail.html', supplier=dict(supplier), yearly_data=yearly_data, stats=stats)
+
+@app.route('/api/export/supplier/<npi>')
+def export_supplier(npi):
+    """Export a single supplier's data to Excel with 3 sheets."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    # Get supplier info with enrichment and parent company
+    cur.execute("""
+        SELECT s.*, se.business_name, se.search_status, se.search_date, se.search_notes,
+               pc.id as parent_company_id, pc.name as parent_company_name,
+               pc.ticker as parent_ticker, pc.website as parent_website,
+               pc.headquarters_state as parent_hq_state
+        FROM suppliers s
+        LEFT JOIN supplier_enrichment se ON s.npi = se.npi
+        LEFT JOIN supplier_parent_map spm ON s.npi = spm.supplier_npi
+        LEFT JOIN parent_companies pc ON spm.parent_company_id = pc.id
+        WHERE s.npi = %s
+    """, [npi])
+    supplier = cur.fetchone()
+    if not supplier:
+        cur.close()
+        conn.close()
+        return "Supplier not found", 404
+    supplier = dict(supplier)
+
+    # Get yearly data
+    cur.execute("""
+        SELECT * FROM supplier_yearly_data WHERE npi = %s ORDER BY data_year
+    """, [npi])
+    yearly_data = [dict(row) for row in cur.fetchall()]
+
+    cur.close()
+    conn.close()
+
+    wb = Workbook()
+
+    # Sheet 1: Supplier Info
+    ws1 = wb.active
+    ws1.title = "Supplier Info"
+    info_fields = [
+        ('NPI', supplier.get('npi')),
+        ('Last Name', supplier.get('last_name')),
+        ('First Name', supplier.get('first_name')),
+        ('Credentials', supplier.get('credentials')),
+        ('Entity Code', supplier.get('entity_code')),
+        ('Business Name', supplier.get('business_name')),
+        ('Specialty', supplier.get('specialty_desc')),
+        ('Street', supplier.get('street1')),
+        ('City', supplier.get('city')),
+        ('State', supplier.get('state')),
+        ('Zip', supplier.get('zip')),
+        ('RUCA', supplier.get('ruca_desc')),
+        ('Enrichment Status', supplier.get('search_status')),
+        ('Parent Company', supplier.get('parent_company_name', '')),
+        ('Ticker', supplier.get('parent_ticker', '')),
+    ]
+    ws1.append(['Field', 'Value'])
+    for label, value in info_fields:
+        ws1.append([label, value or ''])
+    for col in ws1.columns:
+        ws1.column_dimensions[col[0].column_letter].width = 25
+    ws1.cell(row=1, column=1).font = Font(bold=True)
+    ws1.cell(row=1, column=2).font = Font(bold=True)
+
+    # Sheet 2: Yearly Billing Data
+    ws2 = wb.create_sheet("Yearly Billing Data")
+    yearly_headers = ['Year', 'HCPCS Code', 'Claims', 'Beneficiaries', 'Services',
+                      'Avg Submitted Charge', 'Avg Medicare Allowed', 'Avg Medicare Payment']
+    ws2.append(yearly_headers)
+    for col_idx in range(1, len(yearly_headers) + 1):
+        ws2.cell(row=1, column=col_idx).font = Font(bold=True)
+    for yd in yearly_data:
+        ws2.append([
+            yd.get('data_year'),
+            yd.get('hcpcs_code'),
+            yd.get('total_claims', 0),
+            yd.get('total_beneficiaries', 0),
+            yd.get('total_services', 0),
+            yd.get('avg_submitted_charge', 0),
+            yd.get('avg_medicare_allowed', 0),
+            yd.get('avg_medicare_payment', 0),
+        ])
+    for col in ws2.columns:
+        max_length = max(len(str(cell.value or '')) for cell in col)
+        ws2.column_dimensions[col[0].column_letter].width = min(max_length + 2, 30)
+
+    # Sheet 3: Parent Company
+    ws3 = wb.create_sheet("Parent Company")
+    parent_fields = [
+        ('Company Name', supplier.get('parent_company_name', '')),
+        ('Ticker', supplier.get('parent_ticker', '')),
+        ('HQ State', supplier.get('parent_hq_state', '')),
+        ('Website', supplier.get('parent_website', '')),
+    ]
+    ws3.append(['Field', 'Value'])
+    for label, value in parent_fields:
+        ws3.append([label, value or ''])
+    for col in ws3.columns:
+        ws3.column_dimensions[col[0].column_letter].width = 25
+    ws3.cell(row=1, column=1).font = Font(bold=True)
+    ws3.cell(row=1, column=2).font = Font(bold=True)
+
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    name = supplier.get('last_name', '') or ''
+    filename = f"supplier_{npi}_{name}.xlsx"
 
     return Response(
         output.getvalue(),
