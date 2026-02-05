@@ -30,3 +30,4 @@ ENV/
 # Database dumps
 *.sql.backup
 *.dump
+*.sql.gz

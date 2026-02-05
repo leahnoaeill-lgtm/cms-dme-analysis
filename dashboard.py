@@ -18,8 +18,50 @@ from datetime import datetime
 import os
 import folium
 from folium.plugins import HeatMap, MarkerCluster
+from functools import wraps
 
 app = Flask(__name__)
+
+# Basic Auth Configuration
+AUTH_USERNAME = os.environ.get("AUTH_USERNAME", "admin")
+AUTH_PASSWORD = os.environ.get("AUTH_PASSWORD", "")
+
+def check_auth(username, password):
+    """Check if username/password combination is valid."""
+    return username == AUTH_USERNAME and password == AUTH_PASSWORD
+
+def authenticate():
+    """Send 401 response to enable basic auth login."""
+    return Response(
+        'Access denied. Please provide valid credentials.',
+        401,
+        {'WWW-Authenticate': 'Basic realm="CMS Dashboard"'}
+    )
+
+def requires_auth(f):
+    """Decorator to require authentication for routes."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        # Skip auth if no password is configured
+        if not AUTH_PASSWORD:
+            return f(*args, **kwargs)
+        auth = request.authorization
+        if not auth or not check_auth(auth.username, auth.password):
+            return authenticate()
+        return f(*args, **kwargs)
+    return decorated
+
+@app.before_request
+def require_auth_for_all():
+    """Require authentication for all requests."""
+    if not AUTH_PASSWORD:
+        return  # Skip if no password configured
+    # Skip auth check for static files if any
+    if request.endpoint == 'static':
+        return
+    auth = request.authorization
+    if not auth or not check_auth(auth.username, auth.password):
+        return authenticate()
 
 # Background job tracking
 active_jobs = {}

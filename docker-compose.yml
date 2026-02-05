@@ -34,6 +34,8 @@ services:
       DB_NAME: cms_analysis
       DB_USER: postgres
       DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres123}
+      AUTH_USERNAME: ${AUTH_USERNAME:-cms}
+      AUTH_PASSWORD: ${AUTH_PASSWORD:-}
     ports:
       - "5001:5001"
     depends_on:
